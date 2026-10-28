@@ -16,7 +16,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHOTS = sys.argv[1]
 OUT = sys.argv[2]
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 TMP = os.path.dirname(os.path.abspath(OUT))
 FONTS = os.path.join(ROOT, "assets", "fonts")
 for n, f in (("Pop", "Poppins-Regular"), ("PopL", "Poppins-Light"), ("PopM", "Poppins-Medium"), ("PopB", "Poppins-Bold")):
@@ -32,8 +32,8 @@ LAY = open(os.path.join(ROOT, "Layout.h")).read()
 def pt(name): return [float(v) for v in re.search(name + r" \{ ([\d.]+)f, ([\d.]+)f", LAY).groups()]
 KP = [(float(a), float(b)) for a, b in re.findall(r"\{ ([\d.]+)f, ([\d.]+)f \}", LAY.split("knobPos[8] =")[1].split(";")[0])]
 PRES, OCT, LEDL, LEDR, FSL, FSR = pt("presPos"), pt("octPos"), pt("ledL"), pt("ledR"), pt("fsL"), pt("fsR")
-PX0, PY0, PW, PH, PR = 78.0, 56.0, 1084.0, 816.0, 44.0
-JACK_Y = PY0 + 0.40 * PH
+PX0, PY0, PW, PH, PR = 80.0, 54.0, 1079.0, 818.0, 40.0          # boitier du visuel
+JACK_OUT_X, JACK_IN_X = 81.7 + 0.21 * 1075.4, 81.7 + 0.82 * 1075.4   # jacks en haut
 
 src = Image.open(os.path.join(SHOTS, "peachy_status.png")).convert("RGB")
 k = src.height / 928.0
@@ -41,9 +41,9 @@ k = src.height / 928.0
 # ---------- capture annotee ----------
 marks = [(1, *KP[0]), (2, *KP[1]), (3, *KP[2]), (4, *KP[3]), (5, *KP[4]), (6, *KP[5]), (7, *KP[6]), (8, *KP[7]),
          (9, *PRES), (10, *OCT), (11, *LEDL), (12, *LEDR), (13, *FSL), (14, *FSR), (15, 620, 676), (16, 620, 744),
-         (17, 1182, JACK_Y), (18, 58, JACK_Y)]
+         (17, JACK_IN_X, 42), (18, JACK_OUT_X, 42)]
 off = {1: (-70, 0), 2: (-70, 0), 3: (-70, 0), 4: (-70, 0), 5: (-70, 0), 6: (-70, 0), 7: (-70, 0), 8: (-70, 0), 9: (-45, 0),
-       10: (40, 0), 11: (0, -36), 12: (0, -36), 13: (-80, 0), 14: (80, 0), 15: (-235, 0), 16: (-215, 0), 17: (0, -110), 18: (0, -110)}
+       10: (48, 0), 11: (0, -36), 12: (0, -36), 13: (-80, 0), 14: (80, 0), 15: (-235, 0), 16: (-215, 0), 17: (62, 0), 18: (-66, 0)}
 ann = src.copy(); dr = ImageDraw.Draw(ann)
 fnt = ImageFont.truetype(os.path.join(FONTS, "Poppins-Bold.ttf"), int(26 * k))
 for n, x, y in marks:
@@ -76,17 +76,15 @@ shot = Image.open(os.path.join(SHOTS, "peachy_both.png")).convert("RGB")
 kk = shot.height / 928.0
 mk = Image.new("L", shot.size, 0); md = ImageDraw.Draw(mk)
 md.rounded_rectangle((PX0 * kk, PY0 * kk, (PX0 + PW) * kk, (PY0 + PH) * kk), radius=PR * kk, fill=255)
-md.rectangle(((PX0 - 26) * kk, (JACK_Y - 74) * kk, PX0 * kk + 2, (JACK_Y + 74) * kk), fill=255)
-md.rectangle(((PX0 + PW) * kk - 2, (JACK_Y - 74) * kk, (PX0 + PW + 26) * kk, (JACK_Y + 74) * kk), fill=255)
-# jacks : seulement les pixels du metal (pas le fond sombre)
+for jx in (JACK_OUT_X, JACK_IN_X):
+    md.rectangle(((jx - 52) * kk, 38 * kk, (jx + 52) * kk, PY0 * kk + 2), fill=255)
 arr = np.asarray(shot).astype(np.float32).mean(-1)
 m = np.asarray(mk).astype(np.float32)
-yy, xx = np.mgrid[0:shot.height, 0:shot.width]
-inside_body = np.zeros_like(m); ImageDraw.Draw(Image.fromarray(np.zeros((1, 1))));
 body = Image.new("L", shot.size, 0); ImageDraw.Draw(body).rounded_rectangle((PX0 * kk, PY0 * kk, (PX0 + PW) * kk, (PY0 + PH) * kk), radius=PR * kk, fill=255)
 bm = np.asarray(body).astype(np.float32)
-m = np.where(bm > 0, bm, m * (arr > 40))
-mk = Image.fromarray(m.astype(np.uint8)).filter(__import__("PIL.ImageFilter", fromlist=["GaussianBlur"]).GaussianBlur(1.2))
+m = np.where(bm > 0, bm, m * (arr > 60))          # jacks : seulement le metal (pas le fond sombre)
+from PIL import ImageFilter
+mk = Image.fromarray(m.astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))
 cut = Image.new("RGBA", shot.size, (0, 0, 0, 0)); cut.paste(shot, (0, 0), mk)
 cut = cut.crop(cut.getbbox())
 cw, ch = cut.size
@@ -191,11 +189,11 @@ T = {
    ["1", "MASTER", "Preamp output level."], ["2", "GAIN", "Preamp gain."], ["3", "VOLUME", "Fuzz output level."],
    ["4", "DISTORTION", "Fuzz gain."], ["5", "BASS", "Preamp bass."], ["6", "MID", "Preamp mids."], ["7", "TREBLE", "Preamp treble."],
    ["8", "TONE", "Fuzz tone (dark / bright)."], ["9", "PRESENCE", "Preamp presence (small knob)."],
-   ["10", "OCTAVE", "Low octave added to the fuzz (lever up = on)."],
+   ["10", "OCTAVE", "Low octave added to the fuzz (lever up = on), next to TONE."],
    ["11", "LED left", "Preamp on."], ["12", "LED right", "Fuzz on."],
    ["13", "Left footswitch", "Preamp on / off."], ["14", "Right footswitch", "Fuzz on / off."],
    ["15", "Status line", "Setting of the control you just moved."], ["16", "Preset bar", "Arrows = previous / next, name = preset menu."],
-   ["17", "IN", "Input jack."], ["18", "OUT", "Output jack."]],
+   ["17", "IN", "Input jack (top right)."], ["18", "OUT", "Output jack (top left)."]],
  ctl_t="4. Controls in detail",
  ctl=[("GAIN (preamp)", "From about 6 dB to 56 dB, spread over two tube-like stages. Low settings give an edgy, gritty boost; from noon the sound becomes the tight, saturated crunch of the pedal; the top of the travel adds sustain and density. The low end is tightened before the clipping so low-tuned riffs stay defined."),
       ("BASS · MID · TREBLE (preamp)", "Passive tone stack after the clipping, as in a British amp head (exact analog transfer function). The three controls interact like on an amp: MID at minimum gives the deep scoop, BASS follows a logarithmic taper, TREBLE adds bite. All three only act on the preamp."),
@@ -206,8 +204,8 @@ T = {
       ("OCTAVE (fuzz)", "Adds a low octave in front of the fuzz, made the analog way: a flip-flop divides the frequency of your note by two and multiplies your signal, so the octave follows your dynamics. It tracks single notes down to the low G of a 7-string and below; like any analog octave it prefers single notes to chords.")],
  oct_cap="OCTAVE switch off (lever down) and on (lever up).",
  fs_t="5. Footswitches, LEDs and MIDI",
- fs=["<b>Footswitches</b>: same footswitch and behaviour as Echoflex. Left = PREAMP, right = FUZZ, each independent. They switch as soon as you press them and the cap darkens while held. Hold for more than 0.45 s after turning a section on and it works as a momentary switch (it turns off when you release it); right-click &gt; <b>Settings</b> to disable.",
-     "<b>LEDs</b>: red, left = preamp on, right = fuzz on, with a fade and the panel lit around them.",
+ fs=["<b>Footswitches</b>: black footswitches. Left = PREAMP, right = FUZZ, each independent. They switch as soon as you press them; while you hold the mouse button the cap stays pushed down (it sinks, gets darker and its shadow shortens). Hold for more than 0.45 s after turning a section on and it works as a momentary switch (it turns off when you release it); right-click &gt; <b>Settings</b> to disable.",
+     "<b>LEDs</b>: white, left = preamp on, right = fuzz on, with a fade, a white halo and the panel lit around them.",
      "<b>Bypass</b>: each section passes the dry signal when off, time-aligned with the latency reported to the DAW (no clicks, crossfaded).",
      "<b>Noise gate</b> (right-click &gt; Noise gate): Off, <b>Light</b> (default), Medium or Strong. It listens to the input, opens instantly on the next note and lets notes fade naturally; it only acts when a section is on.",
      "<b>Expression pedals</b>: every knob can be driven by a MIDI CC (table below), with smooth ramps between messages, 14-bit support and automatic learning of your pedal's real travel (0 and 100 % are always reached).",
@@ -256,11 +254,11 @@ T = {
    ["1", "MASTER", "Volume de sortie du préampli."], ["2", "GAIN", "Gain du préampli."], ["3", "VOLUME", "Volume de sortie du fuzz."],
    ["4", "DISTORTION", "Gain du fuzz."], ["5", "BASS", "Graves du préampli."], ["6", "MID", "Médiums du préampli."], ["7", "TREBLE", "Aigus du préampli."],
    ["8", "TONE", "Tonalité du fuzz (sombre / brillant)."], ["9", "PRESENCE", "Présence du préampli (petit potard)."],
-   ["10", "OCTAVE", "Octave grave ajoutée au fuzz (levier en haut = on)."],
+   ["10", "OCTAVE", "Octave grave ajoutée au fuzz (levier en haut = on), à côté de TONE."],
    ["11", "LED gauche", "Préampli enclenché."], ["12", "LED droite", "Fuzz enclenché."],
    ["13", "Footswitch gauche", "Préampli on / off."], ["14", "Footswitch droit", "Fuzz on / off."],
    ["15", "Ligne d'état", "Réglage de la commande que vous venez de bouger."], ["16", "Barre de presets", "Flèches = précédent / suivant, nom = menu des presets."],
-   ["17", "IN", "Jack d'entrée."], ["18", "OUT", "Jack de sortie."]],
+   ["17", "IN", "Jack d'entrée (en haut à droite)."], ["18", "OUT", "Jack de sortie (en haut à gauche)."]],
  ctl_t="4. Les commandes en détail",
  ctl=[("GAIN (préampli)", "D'environ 6 dB à 56 dB, répartis sur deux étages façon lampe. En bas de course, un boost mordant et granuleux ; dès midi, le crunch serré et saturé de la pédale ; le haut de la course ajoute du sustain et de la densité. Le grave est resserré avant l'écrêtage pour que les riffs accordés bas restent définis."),
       ("BASS · MID · TREBLE (préampli)", "Tone stack passif après l'écrêtage, comme dans une tête d'ampli britannique (fonction de transfert analogique exacte). Les trois commandes interagissent comme sur un ampli : MID au minimum donne le gros creux de médiums, BASS suit une courbe logarithmique, TREBLE ajoute du mordant. Elles n'agissent que sur le préampli."),
@@ -271,8 +269,8 @@ T = {
       ("OCTAVE (fuzz)", "Ajoute une octave grave devant le fuzz, à la manière analogique : une bascule divise par deux la fréquence de la note et multiplie votre signal, l'octave suit donc votre dynamique. Elle suit les notes seules jusqu'au Sol grave d'une 7 cordes et plus bas ; comme toute octave analogique, elle préfère les notes seules aux accords.")],
  oct_cap="Inverseur OCTAVE coupé (levier en bas) et enclenché (levier en haut).",
  fs_t="5. Footswitchs, LED et MIDI",
- fs=["<b>Footswitchs</b> : même footswitch et même fonctionnement qu'Echoflex. Gauche = PREAMP, droit = FUZZ, indépendants. Ils basculent dès l'appui et le bouton s'assombrit tant qu'on appuie. Maintenu plus de 0,45 s après avoir enclenché une section, il fonctionne en momentané (la section se coupe au relâchement) ; clic droit &gt; <b>Settings</b> pour désactiver.",
-     "<b>LED</b> : rouges, gauche = préampli actif, droite = fuzz actif, avec fondu et façade éclairée autour.",
+ fs=["<b>Footswitchs</b> : footswitchs noirs. Gauche = PREAMP, droit = FUZZ, indépendants. Ils basculent dès l'appui ; tant qu'on garde le bouton de la souris enfoncé, le bouton reste enfoncé (il descend, s'assombrit et son ombre se raccourcit). Maintenu plus de 0,45 s après avoir enclenché une section, il fonctionne en momentané (la section se coupe au relâchement) ; clic droit &gt; <b>Settings</b> pour désactiver.",
+     "<b>LED</b> : blanches, gauche = préampli actif, droite = fuzz actif, avec fondu, halo blanc et façade éclairée autour.",
      "<b>Bypass</b> : chaque section coupée laisse passer le signal sec, aligné sur la latence annoncée au DAW (sans clic, en fondu).",
      "<b>Noise gate</b> (clic droit &gt; Noise gate) : Off, <b>Light</b> (par défaut), Medium ou Strong. Il écoute l'entrée, s'ouvre instantanément à la note suivante et laisse les notes s'éteindre naturellement ; il n'agit que si une section est enclenchée.",
      "<b>Pédales d'expression</b> : chaque potard peut être piloté par un CC MIDI (tableau ci-dessous), avec rampes douces entre les messages, prise en charge du 14 bits et apprentissage automatique de la course réelle de la pédale (0 et 100 % toujours atteints).",

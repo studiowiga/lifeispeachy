@@ -191,7 +191,7 @@ namespace peachy
         poly.prepare (fs); polyCold = true; octBuf.assign ((size_t) maxChunk, 0.0f);
         octEnv = 0; octEnvRel = (float) std::exp (-1.0 / (0.080 * fs)); octBias = std::tanh (0.35f);
         octSatNorm = 1.0f / (float) std::tanh ((double) octDrive);   // crete de sortie ~ crete d'entree
-        octSatHP.highpass (fs, 15.0, 0.7); octSatLP.lowpass (fs, 2600.0, 0.7); octSatHP.reset(); octSatLP.reset();
+        octSatHP.highpass (fs, 15.0, 0.7); octSatLP.lowpass (fs, 4500.0, 0.7); octSatHP.reset(); octSatLP.reset();
         pX = pY = pO = 0; lvlO = 1;
         aLvl = (float) std::exp (-1.0 / (0.300 * fs)); aLvlG = (float) std::exp (-1.0 / (0.150 * fs)); toneF.fs = 48000.0;
         for (auto* s : { &sDist, &sTone, &sVol }) s->setTime (48000.0, 25.0);

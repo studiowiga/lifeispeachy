@@ -299,9 +299,7 @@ namespace peachy
         if (octLive)
         {
             if (polyCold) { poly.reset(); polyCold = false; }
-            // melange : octave propre (poids dans le grave) + la meme octave saturee en parallele (grain facon fuzz,
-            // seulement quand le fuzz ou le preampli est actif) ; les deux restent en phase, rien ne s'annule
-            const float chainOn = std::max (sFuzzOn.s2, sPreOn.s2);
+            // octave saturee en parallele (grain facon fuzz), sans part propre, footswitchs actifs ou non
             for (int i = 0; i < n; ++i)
             {
                 const float o = poly.wet (x[i]) * sOct.next (p.octave ? 1.0f : 0.0f);
@@ -309,7 +307,7 @@ namespace peachy
                 const float u = o / (octEnv + 1.0e-6f);                          // niveau constant dans l'ecreteur
                 const float sat = (std::tanh (octDrive * u + 0.35f) - octBias) * octEnv * octSatNorm;
                 const float satF = (float) octSatLP.process (octSatHP.process (sat));
-                octBuf[(size_t) i] = o * (1.0f - chainOn * (1.0f - octClean)) + chainOn * octSatAmt * satF;
+                octBuf[(size_t) i] = octSatAmt * satF;                              // octave saturee seule (v1.3.6)
             }
         }
         else { sOct.reset (0.0f); polyCold = true; std::fill (octBuf.begin(), octBuf.begin() + n, 0.0f); }

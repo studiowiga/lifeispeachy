@@ -11,6 +11,7 @@ Sorties (racine du depot) :
   toggle_strip.png      inverseur OCTAVE : 3 images carrees empilees (haut = ON, intermediaire, bas = OFF)
   glow_l.png / glow_r.png  facade eclairee par chaque LED (canal alpha = seule la lumiere ajoutee)
   Layout.h              reperes des commandes
+Habillage sans motif central ni nom (demande de l'utilisateur) : coulures en haut, rouge qui fonce vers les coins bas.
 Usage : python3 tools/make_art.py
 """
 import os, math
@@ -46,7 +47,6 @@ PRES = P(0.398, 0.600); PRES_R = 22.0
 OCT = P(0.864, 0.352)
 LED_L, LED_R = P(0.218, 0.648), P(0.772, 0.648)
 FS_L, FS_R = P(0.169, 0.862), P(0.840, 0.862)
-PEACH_C, PEACH_R = (612.0, 716.0), 116.0
 
 # ------------------------------------------------------------------ outils
 YY, XX = np.mgrid[0:H, 0:W].astype(np.float32)
@@ -120,6 +120,9 @@ for _ in range(70):
     a = rng.uniform(0, math.pi); l = rng.uniform(6, 40) * AS
     cv2.line(scr, (int(x0), int(y0)), (int(x0 + l * math.cos(a)), int(y0 + l * math.sin(a))), float(rng.uniform(0.2, 0.6)), 1, cv2.LINE_AA)
 redc += cv2.GaussianBlur(scr, (0, 0), 0.6)[..., None] * np.array([40.0, 22.0, 22.0])
+dark = np.clip((UY - (PY0 + 0.42 * PH)) / (0.58 * PH), 0, 1) ** 1.4
+dark *= np.clip(np.abs(UX - (PX0 + PW / 2)) / (PW * 0.42), 0, 1) ** 1.2 * 0.9 + 0.12
+redc *= (1 - 0.84 * np.clip(dark, 0, 1))[..., None]
 img = img * (1 - face[..., None]) + redc * face[..., None]
 
 # ------------------------------------------------------------------ 4. encre noire : masque (sur-echantillonne 2x)
@@ -136,99 +139,47 @@ def free(x, y, r):
         if math.hypot(x - cx, y - cy) < rr + r: return False
     return True
 
-# 4a. bande d'encre irreguliere en haut + coulures (entre les inscriptions)
+# 4a. peinture noire versee depuis le haut : bande epaisse ondulee + grosses coulures qui descendent loin
+#     (elles passent derriere les potards ; les inscriptions qu'elles croisent sont reservees en rouge)
 topy = PY0 + FI
-pts = [U2(PX0 + 20, topy - 10)]
-for x in np.linspace(PX0 + 20, PX0 + PW - 20, 140):
-    pts.append(U2(x, topy + 5 + 4 * math.sin(x * 0.05) + rng.uniform(0, 5)))
-pts.append(U2(PX0 + PW - 20, topy - 10))
+def band_y(x):
+    return topy + 26 + 9 * math.sin(x * 0.021 + 0.7) + 6 * math.sin(x * 0.057 + 2.0) + 3 * math.sin(x * 0.13)
+pts = [U2(PX0, topy - 14)] + [U2(x, band_y(x)) for x in np.linspace(PX0, PX0 + PW, 400)] + [U2(PX0 + PW, topy - 14)]
 dr.polygon(pts, fill=255)
-drips = [(120, 60), (175, 34), (222, 22), (372, 70), (420, 120), (452, 40), (590, 92), (612, 30), (775, 140), (812, 62), (858, 96), (895, 28), (1112, 64), (1135, 110)]
-for x, ln in drips:
-    w0 = rng.uniform(5.5, 9.0)
-    for t in np.linspace(0, 1, 60):
-        y = topy + 4 + ln * t
-        w = w0 * (1 - 0.35 * t) + 0.6 * math.sin(t * 9 + x)
-        dr.ellipse([U2(x - w / 2 + 1.2 * math.sin(t * 5 + x), y - w / 2), U2(x + w / 2 + 1.2 * math.sin(t * 5 + x), y + w / 2)], fill=255)
-    b = w0 * 0.95
-    dr.ellipse([U2(x - b / 2 + 1.2 * math.sin(5 + x), topy + 4 + ln - b * 0.3), U2(x + b / 2 + 1.2 * math.sin(5 + x), topy + 4 + ln + b * 0.9)], fill=255)
+# (x, longueur sous la bande, largeur)
+DRIPS = [(112, 255, 24), (160, 92, 13), (205, 40, 10), (228, 175, 26), (372, 58, 12), (408, 26, 9),
+         (441, 470, 23), (558, 30, 11), (592, 150, 20), (618, 52, 10), (782, 560, 32),
+         (828, 175, 16), (866, 70, 12), (884, 150, 20), (1106, 385, 27), (1142, 150, 15)]
+def drip(x, ln, w0):
+    y0 = band_y(x) - 6
+    n = 160
+    left, right = [], []
+    ph = x * 0.37
+    for i in range(n + 1):
+        t = i / n
+        y = y0 + ln * t
+        # col evase sous la bande, corps qui s'affine puis se renfle avant la goutte
+        w = w0 * (0.78 + 0.55 * math.exp(-t * 14) - 0.22 * t + 0.10 * math.sin(t * 7 + ph))
+        cx = x + 2.2 * math.sin(t * 4.0 + ph) * (w0 / 20)
+        left.append(U2(cx - w / 2, y)); right.append(U2(cx + w / 2, y))
+    dr.polygon(left + right[::-1], fill=255)
+    # goutte terminale (un peu plus large, en forme de larme)
+    bw = w0 * (0.78 - 0.22 + 0.10 * math.sin(7 + ph)) * 1.32
+    cx = x + 2.2 * math.sin(4.0 + ph) * (w0 / 20)
+    yb = y0 + ln
+    dr.ellipse([U2(cx - bw / 2, yb - bw * 0.55), U2(cx + bw / 2, yb + bw * 0.62)], fill=255)
+    # petite goutte detachee sous les longues coulures
+    if ln > 200:
+        r_ = w0 * 0.22
+        dr.ellipse([U2(cx - r_, yb + bw * 0.62 + w0 * 0.55), U2(cx + r_, yb + bw * 0.62 + w0 * 0.55 + 2.4 * r_)], fill=255)
+for x, ln, w0 in DRIPS:
+    drip(x, ln, w0)
+# accumulations de peinture dans la bande (petites bosses vers le bas entre les coulures)
+for x in np.linspace(PX0 + 30, PX0 + PW - 30, 26):
+    r_ = rng.uniform(6, 13)
+    dr.ellipse([U2(x - r_ * 1.6, band_y(x) - r_), U2(x + r_ * 1.6, band_y(x) + r_ * 0.75)], fill=255)
 
-# 4b. la peche (encre pleine, deux lobes, reflets en trame de points, fente rouge, tige et feuilles)
-pcx, pcy = PEACH_C; R0 = PEACH_R
-lobes = [((-0.30, 0.04), 0.76), ((0.30, 0.07), 0.72)]          # (centre relatif, rayon relatif)
-def inside_lobes(x, y, grow=0.0):
-    v = np.zeros_like(x, bool)
-    for (ox, oy), rr in lobes:
-        v |= np.hypot(x - (pcx + ox * R0), y - (pcy + oy * R0)) < (rr * R0 + grow)
-    # bas legerement pointu (la pointe de la peche)
-    v |= (np.abs(x - (pcx + 0.04 * R0)) < (pcy + 0.93 * R0 - y) * 0.95) & (y > pcy + 0.25 * R0)
-    return v
-KH, KW = H * SS, W * SS
-gy2, gx2 = np.mgrid[0:KH, 0:KW].astype(np.float32)
-ux2, uy2 = (gx2 + 0.5) / K, (gy2 + 0.5) / K
-pk = inside_lobes(ux2, uy2).astype(np.float32)
-pk = cv2.GaussianBlur(pk, (0, 0), 0.7)
-# trame : un reflet par lobe (lumiere en haut a gauche), points rouges de plus en plus gros vers le centre du reflet
-holes = Image.new('L', INK.size, 0); dh = ImageDraw.Draw(holes)
-cell = 8.0; ang = math.radians(30)
-spots = [(pcx - 0.62 * R0, pcy - 0.32 * R0, 0.62 * R0), (pcx + 0.05 * R0, pcy - 0.30 * R0, 0.48 * R0)]
-for iy in range(-45, 46):
-    for ix in range(-45, 46):
-        gx_ = ix * cell; gy_ = iy * cell
-        x = pcx + gx_ * math.cos(ang) - gy_ * math.sin(ang); y = pcy + gx_ * math.sin(ang) + gy_ * math.cos(ang)
-        s_ = 0.0
-        for hx_, hy_, rad in spots:
-            s_ = max(s_, max(0.0, 1.0 - math.hypot((x - hx_) / rad, (y - hy_) / (rad * 0.8))) ** 1.15)
-        if s_ <= 0.04: continue
-        rr = 0.5 * cell * 1.08 * math.sqrt(s_)
-        dh.ellipse([U2(x - rr, y - rr), U2(x + rr, y + rr)], fill=255)
-hl = np.asarray(holes, np.float32) / 255.0
-# fente : courbe rouge entre les lobes, de la tige vers la pointe
-cleft = Image.new('L', INK.size, 0); dc = ImageDraw.Draw(cleft)
-for t in np.linspace(0, 1, 120):
-    x = pcx + 0.02 * R0 + 0.16 * R0 * math.sin(t * math.pi * 0.9) - 0.04 * R0 * t
-    y = pcy - 0.62 * R0 + 1.45 * R0 * t
-    w = 6.5 * (1 - t) ** 0.7 + 0.8
-    dc.ellipse([U2(x - w / 2, y - w / 2), U2(x + w / 2, y + w / 2)], fill=255)
-cl = np.asarray(cleft, np.float32) / 255.0
-peach_ink = pk * (1 - hl) * (1 - cl)
-# tige et deux feuilles (encre pleine), nervures rouges
-leaf = Image.new('L', INK.size, 0); dl = ImageDraw.Draw(leaf)
-lv = Image.new('L', INK.size, 0); dv = ImageDraw.Draw(lv)
-sx, sy = pcx + 0.02 * R0, pcy - 0.66 * R0
-for t in np.linspace(0, 1, 30):
-    x = sx - 3 * t; y = sy - 22 * t
-    dl.ellipse([U2(x - 4.5, y - 4.5), U2(x + 4.5, y + 4.5)], fill=255)
-def draw_leaf(x0, y0, length, ang_deg, width, bend):
-    a = math.radians(ang_deg); ca, sa = math.cos(a), math.sin(a)
-    pts = []
-    for t in np.linspace(0, 1, 60):
-        bx = length * t; by = -bend * math.sin(math.pi * t)
-        w = width * math.sin(math.pi * t) ** 0.85 * (1 - 0.25 * t)
-        pts.append((bx, by, w))
-    def tr(bx, by): return U2(x0 + bx * ca - by * sa, y0 + bx * sa + by * ca)
-    top = [tr(bx, by - w / 2) for bx, by, w in pts]; bot = [tr(bx, by + w / 2) for bx, by, w in pts]
-    dl.polygon(top + bot[::-1], fill=255)
-    dv.line([tr(bx, by) for bx, by, w in pts[3:50]], fill=255, width=int(2.6 * K))
-    for t0 in (0.28, 0.48, 0.68):
-        bx, by, w = pts[int(t0 * 59)]
-        dv.line([tr(bx, by), tr(bx + 14, by - 0.36 * w)], fill=255, width=int(1.9 * K))
-        dv.line([tr(bx, by), tr(bx + 11, by + 0.34 * w)], fill=255, width=int(1.9 * K))
-draw_leaf(sx - 2, sy - 18, 118, -14, 40, 12)
-draw_leaf(sx - 4, sy - 16, 66, -150, 24, -7)
-leaf_ink = np.asarray(leaf, np.float32) / 255.0 * (1 - np.asarray(lv, np.float32) / 255.0)
-
-# 4c. nom « Peachy » (Rubik Wet Paint), legerement incline
-FONT_NAME = os.path.join(ROOT, 'assets', 'fonts', 'RubikWetPaint-Regular.ttf')
 FONT_LAB = os.path.join(ROOT, 'assets', 'fonts', 'SpecialElite-Regular.ttf')
-name = Image.new('L', INK.size, 0)
-fnt = ImageFont.truetype(FONT_NAME, int(118 * K))
-tmp = Image.new('L', (int(520 * K), int(220 * K)), 0)
-ImageDraw.Draw(tmp).text((int(260 * K), int(110 * K)), "Peachy", font=fnt, fill=255, anchor='mm')
-tmp = tmp.rotate(7, resample=Image.BICUBIC, center=(int(260 * K), int(110 * K)))
-NAME_C = (866.0, 488.0)
-name.paste(tmp, (int((NAME_C[0] - 260) * K), int((NAME_C[1] - 110) * K)), tmp)
-name_ink = np.asarray(name, np.float32) / 255.0
 
 # 4d. inscriptions des commandes (Special Elite, minuscules)
 labs = Image.new('L', INK.size, 0); dlab = ImageDraw.Draw(labs)
@@ -256,9 +207,9 @@ def splash(cx, cy, n, spread, rmax):
                 rr = r * (1 - 0.8 * t) * 0.55
                 xx, yy = x + math.cos(a) * r * 3 * t, y + math.sin(a) * r * 3 * t
                 dsp.ellipse([U2(xx - rr, yy - rr), U2(xx + rr, yy + rr)], fill=255)
-splash(470, 640, 90, 55, 9)
-splash(760, 790, 70, 45, 7)
-splash(1080, 470, 60, 40, 6)
+splash(430, 690, 60, 50, 7)
+splash(800, 700, 60, 45, 6)
+splash(1080, 480, 50, 40, 5)
 splash(190, 560, 50, 45, 5)
 splash(250, 300, 25, 30, 4)
 for _ in range(1800):                                   # brume (aerographe) dans les coins bas
@@ -270,17 +221,33 @@ for _ in range(1800):                                   # brume (aerographe) dan
         dsp.ellipse([U2(x - r, y - r), U2(x + r, y + r)], fill=255)
 spl_ink = np.asarray(spl, np.float32) / 255.0
 
-ink2 = np.asarray(INK, np.float32) / 255.0
-ink2 = np.maximum.reduce([ink2, peach_ink, leaf_ink, name_ink, lab_ink, spl_ink])
-ink = cv2.resize(ink2, (W, H), interpolation=cv2.INTER_AREA)
-# serigraphie usee : micro-manques dans l'encre (plus sur les grands aplats), bords legerement baveux
-wear = (fbm((H, W), [1, 3], [1.0, 0.6], 21) > 2.05).astype(np.float32)
-wear = cv2.GaussianBlur(wear, (0, 0), 0.5)
+paint2 = np.asarray(INK, np.float32) / 255.0                          # peinture versee (relief brillant)
+paint = cv2.resize(paint2, (W, H), interpolation=cv2.INTER_AREA)
 lab_mask = cv2.resize(lab_ink, (W, H), interpolation=cv2.INTER_AREA)
-ink = ink * (1 - wear * (1 - lab_mask) * 0.85)
+spl_mask = cv2.resize(spl_ink, (W, H), interpolation=cv2.INTER_AREA)
+# inscriptions : noires sur le rouge, reservees (rouges) dans la peinture noire
+ink = np.maximum(paint * (1 - lab_mask), lab_mask * (1 - paint))
+ink = np.maximum(ink, spl_mask * (1 - lab_mask))
+# serigraphie usee : micro-manques dans les aplats imprimes (pas dans la peinture epaisse)
+wear = cv2.GaussianBlur((fbm((H, W), [1, 3], [1.0, 0.6], 21) > 2.05).astype(np.float32), (0, 0), 0.5)
+ink = ink * (1 - wear * (1 - lab_mask) * (1 - paint) * 0.85)
 ink *= face
-ink_col = np.array([14.0, 11.0, 12.0]) * (0.9 + 0.2 * light)[..., None] + (sheen * 0.35)[..., None]
-img = img * (1 - ink[..., None]) + ink_col * ink[..., None]
+ink_col = np.array([13.0, 10.0, 11.0]) * (0.9 + 0.2 * light)[..., None] + (sheen * 0.3)[..., None]
+# peinture epaisse et brillante : relief tire de la distance au bord, reflet de la lumiere en haut a gauche
+dist = cv2.distanceTransform((paint > 0.5).astype(np.uint8), cv2.DIST_L2, 5) / AS
+hp = np.sqrt(np.clip(dist, 0, 6.0) / 6.0) * 3.2
+hp = cv2.GaussianBlur(hp, (0, 0), 1.2 * AS)
+gy_, gx_ = np.gradient(hp, 1.0 / AS)
+n_ = np.dstack([-gx_, -gy_, np.ones_like(hp)]); n_ /= np.linalg.norm(n_, axis=2, keepdims=True)
+spec = np.clip(n_ @ HV, 0, 1) ** 60 * 150 + np.clip(n_ @ HV, 0, 1) ** 8 * 18
+rim = np.clip(-(n_ @ L) + 0.55, 0, 1) * 0.35                          # bord oppose a la lumiere un peu plus sombre
+gloss = (spec * paint)[..., None] * np.array([1.0, 0.93, 0.95])
+pcol = ink_col * (1 - rim[..., None] * paint[..., None]) + gloss
+col = np.where((paint > 0.02)[..., None] & (lab_mask < 0.5)[..., None], pcol, ink_col)
+img = img * (1 - ink[..., None]) + col * ink[..., None]
+# ombre portee tres legere de la peinture en relief sur la facade
+psh = cv2.GaussianBlur(cv2.warpAffine(paint, np.float32([[1, 0, 2.0 * AS], [0, 1, 2.8 * AS]]), (W, H)), (0, 0), 2.0 * AS)
+img *= (1 - 0.35 * psh * (1 - paint) * face)[..., None]
 
 # ------------------------------------------------------------------ 5. logo Studio Wiga (noir), tout en bas
 logo = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'logo_studio_wiga_blanc.png')).convert('RGBA')).astype(np.float32)
@@ -466,20 +433,21 @@ for fn, side in (('jack_out_gauche.png', -1), ('jack_in_droite.png', 1)):
     sh = cv2.GaussianBlur(cv2.warpAffine(sh, np.float32([[1, 0, 10], [0, 1, 14]]), (W, H)), (0, 0), 8) * (1 - body)
     img *= (1 - 0.6 * sh)[..., None]
     over(img, j, x0, JACK_Y * AS - jh / 2)
-flab_small = ImageFont.truetype(os.path.join(ROOT, 'Poppins-Medium.ttf'), int(15 * AS))
 
 # ------------------------------------------------------------------ 9. inverseur OCTAVE : levier nickel du kit (haut = ON / milieu / bas = OFF)
-TOG_K = 0.66
-TOG_S = 92.0                                       # sprite carre (unites)
-def toggle_frame(fn):
+TOG_K = 0.95
+TOG_S = 124.0                                       # sprite carre (unites)
+def toggle_frame(fn, ly0, ly1):
     s = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'kit', fn)).convert('RGBA')).astype(np.float32)
     hh, ww = s.shape[:2]
     yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float32)
     cx, cy = 93.0, 97.0                                    # centre de la bague dans le kit (px)
     rr = np.hypot(xx - cx, yy - cy)
     Lm = s[..., :3].mean(-1)
-    lever = (np.abs(xx - cx) < 17) & (yy > 8) & (yy < 150) & (Lm > 30)
-    objm = ((rr < 44) | lever) & (s[..., 3] > 128)
+    lever = (np.abs(xx - cx) < 17) & (yy > ly0) & (yy < ly1) & (Lm > 30)
+    objm = ((rr < 41) | lever) & (s[..., 3] > 128) & ~((rr > 33) & (Lm < 40)) & ~(lever & (rr > 41) & (Lm < 45))
+    nl, lab_, st, _ = cv2.connectedComponentsWithStats(objm.astype(np.uint8))
+    objm = lab_ == (1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA])))          # une seule piece (pas de residus)
     objm = cv2.GaussianBlur(objm.astype(np.float32), (0, 0), 0.8)
     n = round(TOG_S * AS)
     sc = TOG_K
@@ -494,7 +462,7 @@ def toggle_frame(fn):
     rgb = rgb * 1.05 + (np.clip(1 - a, 0, 1) * 0)[..., None]
     col = np.where(alpha[..., None] > 1e-4, rgb * (a / np.maximum(alpha, 1e-4))[..., None], 0)
     return np.dstack([np.clip(col, 0, 255), alpha * 255]).astype(np.uint8)
-frames = [toggle_frame('switch_levier_ON.png'), toggle_frame('switch_levier_milieu.png'), toggle_frame('switch_levier_OFF.png')]
+frames = [toggle_frame('switch_levier_ON.png', 8, 97), toggle_frame('switch_levier_milieu.png', 97, 97), toggle_frame('switch_levier_OFF.png', 97, 150)]
 Image.fromarray(np.concatenate(frames, 0), 'RGBA').save(os.path.join(ROOT, 'toggle_strip.png'))
 
 # ------------------------------------------------------------------ 10. sauvegarde du fond
@@ -536,6 +504,5 @@ with open(os.path.join(ROOT, 'Layout.h'), 'w') as fo:
     fo.write(f"    const juce::Point<float> ledL {{ {f(LED_L[0])}, {f(LED_L[1])} }}, ledR {{ {f(LED_R[0])}, {f(LED_R[1])} }}; const float ledLensR = {f(9.0 * 0.62)};\n")
     fo.write(f"    const juce::Rectangle<float> glowL {{ {f(GL[0])}, {f(GL[1])}, {f(GL[2])}, {f(GL[3])} }}, glowR {{ {f(GRr[0])}, {f(GRr[1])}, {f(GRr[2])}, {f(GRr[3])} }};\n")
     fo.write(f"    const juce::Point<float> fsL {{ {f(FS_L[0])}, {f(FS_L[1])} }}, fsR {{ {f(FS_R[0])}, {f(FS_R[1])} }}; const float footR = {f(36.0 * FS_K * 1.0)};   // bouton du footswitch\n")
-    fo.write(f"    const juce::Point<float> peachC {{ {f(PEACH_C[0])}, {f(PEACH_C[1])} }}; const float peachR = {f(PEACH_R)};\n")
     fo.write("}\n")
 print('ok')

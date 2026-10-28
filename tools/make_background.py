@@ -79,7 +79,36 @@ def shift_volume(A):
     C = hole * fill + (1 - hole) * A
     C[y0:y1, x0 + d:x1 + d] = w * src + (1 - w) * C[y0:y1, x0 + d:x1 + d]
     return C
+A_SRC = A.copy()
 A = shift_volume(A)
+
+# ombres de VOLUME sur le rouge : l'ancienne (restee en place) et la decalee (coupee par le raccord) sont retirees,
+# puis l'ombre d'origine du potard est reposee entiere sous sa nouvelle place
+def _letters(A):
+    red = (A[..., 0] > 22) & (A[..., 0] > 1.35 * A[..., 1] + 4)
+    m = ((A.mean(-1) < 70) & ~red).astype(np.uint8)
+    return cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))).astype(bool)
+def _shadow_ratio(A, zone):
+    red = ((A[..., 0] > 22) & (A[..., 0] > 1.35 * A[..., 1] + 4)).astype(np.float32)
+    w = red * (~_letters(A))
+    nb = lambda im, w, s: cv2.GaussianBlur(im * w, (0, 0), s) / (cv2.GaussianBlur(w, (0, 0), s) + 1e-6)
+    ex = np.ones(A.shape[:2], np.float32); x0, x1, y0, y1 = zone; ex[y0:y1, x0:x1] = 0   # reference hors de l'ombre
+    return np.clip(nb(A[..., 0], w, 9) / np.maximum(nb(A[..., 0], w * ex, 90), 1), 0.25, 1.0), red
+def volume_shadow(A, A0):
+    R0, _ = _shadow_ratio(A0, (1180, 1640, 450, 700))
+    R1, red1 = _shadow_ratio(A, (1180, 1830, 450, 700))
+    d = VOL_SHIFT; vx = int(VOL_OLD[0] / S0)
+    win = np.zeros(A.shape[:2], np.float32); win[440:700, 1180:1830] = 1; win = cv2.GaussianBlur(win, (0, 0), 20)
+    keep = ~cv2.dilate(_letters(A).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    corr = 1 + (np.clip(1.0 / R1, 1, 3.0) - 1) * win * keep
+    B = np.where((red1 > 0)[..., None], A * corr[..., None], A)
+    tx0, tx1, ty0, ty1 = vx - 190, vx + 190, 430, 720
+    Rn = np.ones(A.shape[:2], np.float32); Rn[ty0:ty1, tx0 + d:tx1 + d] = R0[ty0:ty1, tx0:tx1]
+    fe = np.zeros_like(Rn); fe[ty0:ty1, tx0 + d:tx1 + d] = 1; fe = cv2.GaussianBlur(fe, (0, 0), 22)
+    Rn = 1 + (Rn - 1) * fe
+    redB = (B[..., 0] > 22) & (B[..., 0] > 1.35 * B[..., 1] + 4)
+    return np.where(redB[..., None], B * Rn[..., None], B)
+A = volume_shadow(A, A_SRC); del A_SRC
 lum = lambda a: a.mean(-1)
 rng = np.random.default_rng(3)
 

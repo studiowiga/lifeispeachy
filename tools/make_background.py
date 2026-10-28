@@ -30,7 +30,10 @@ W, H = UW * AS, UH * AS
 S0 = 1.0 / AS                                # px (visuel ramene au cadre 2x) -> unites
 
 # ------------------------------------------------------------------ reperes (unites ; identiques au rendu v1, le visuel est aligne dessus)
-KNOBS = [(292.63, 202.88), (499.68, 202.88), (693.71, 202.88), (988.56, 202.88),
+VOL_OLD = (693.71, 202.88)
+VOL_SHIFT = 126                               # px du cadre 2x (= 63 unites) : VOLUME rapproche de DISTORTION,
+                                              # TONE au milieu des deux -> triangle VOLUME / DISTORTION / TONE
+KNOBS = [(292.63, 202.88), (499.68, 202.88), (VOL_OLD[0] + VOL_SHIFT * 0.5, 202.88), (988.56, 202.88),
          (187.48, 396.27), (388.02, 396.27), (598.32, 396.27), (872.57, 396.27)]
 KNOB_R, KNOB_TOP = 50.0, 42.0                # potard du visuel : moletage exterieur / dessus noir
 PRES, PRES_R, PRES_TOP = (509.43, 545.60), 21.0, 16.5
@@ -52,6 +55,31 @@ A = cv2.cvtColor(cv2.imread(SRC), cv2.COLOR_BGR2RGB).astype(np.float32)
 A = cv2.resize(A, (W, H), interpolation=cv2.INTER_AREA if A.shape[1] > W else cv2.INTER_LANCZOS4)   # meme geometrie que le repere
 Hs, Ws = A.shape[:2]
 YY, XX = np.mgrid[0:Hs, 0:Ws].astype(np.float32)
+
+def shift_volume(A):
+    # bloc potard + inscription « volume » + ombre + bandes, decale horizontalement ; les bandes etant horizontales,
+    # le raccord (fondu de 48 px a gauche et a droite, 40 px en haut et en bas) reste invisible
+    x0, x1, y0, y1, d, fe, fv = 1150, 1640, 150, 600, VOL_SHIFT, 48, 40
+    src = A[y0:y1, x0:x1].copy()
+    w = np.ones((y1 - y0, x1 - x0), np.float32)
+    rx = np.arange(x1 - x0, dtype=np.float32); ry = np.arange(y1 - y0, dtype=np.float32)
+    wx = np.clip(np.minimum(rx, (x1 - x0 - 1) - rx) / fe, 0, 1); wy = np.clip(np.minimum(ry, (y1 - y0 - 1) - ry) / fv, 0, 1)
+    sm = lambda t: t * t * (3 - 2 * t)
+    w = (sm(wx)[None, :] * sm(wy)[:, None])[..., None]
+    # ancienne place (bord gauche du potard et de l'inscription, avant le fondu) : rangees de bandes reprises
+    # d px plus a gauche, dans le visuel d'origine
+    cx, cy = VOL_OLD[0] / S0, VOL_OLD[1] / S0
+    hole = np.zeros((Hs, Ws), np.float32)
+    hole[np.hypot(XX - cx - 6, YY - cy - 8) < 126] = 1                 # potard + ombre
+    hole[int(cy - 175):int(cy - 92), int(cx - 108):int(cx + 112)] = 1  # inscription
+    hole = np.clip(cv2.GaussianBlur(hole, (0, 0), 5) * 1.5, 0, 1)
+    hole[:, x0 + d + fe:] = 0
+    hole = hole[..., None]
+    fill = np.roll(A, d, axis=1)
+    C = hole * fill + (1 - hole) * A
+    C[y0:y1, x0 + d:x1 + d] = w * src + (1 - w) * C[y0:y1, x0 + d:x1 + d]
+    return C
+A = shift_volume(A)
 lum = lambda a: a.mean(-1)
 rng = np.random.default_rng(3)
 

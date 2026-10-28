@@ -25,9 +25,9 @@ habillage d'après le visuel de l'utilisateur (`design/source/peachy_visuel_v3.p
 | FUZZ (footswitch droit, LED droite) | DISTORTION | Son des **captures NAM de la vraie pédale** (50 à 100 %), fondu entre deux captures voisines ; sous 50 % : moins d'attaque à l'entrée de la capture 50 % |
 | | TONE | Filtre exact du TONE d'origine, mesuré sur les captures TONE 1 à 9 (agit après l'écrêtage) |
 | | VOLUME | Volume de sortie du fuzz (midi = niveau des captures) |
-| | OCTAVE (inverseur) | Double octave grave analogique (deux bascules en cascade : fréquence divisée par 4, deux octaves sous la note) ajoutée devant le fuzz ; détection accordée sur la fondamentale par un suivi de hauteur (YIN) : tient la note sur les 7 et 8 cordes accordées très bas (jusqu'à ~25 Hz) et sur les power chords (se cale sur la fondamentale), sans décrocher en fin de note ; ouverture en fondu dès que la bascule est calée ; agit quand le FUZZ est allumé |
+| OCTAVE (inverseur, indépendant) | | Générateur d'octaves polyphonique au son du preset **Baritone Growl de FOG Z** (direct −14,4 dB, −1 octave +1,1 dB, −2 octaves −17 dB, passe-bas résonant 1,3 kHz Q 3,2), placé avant le fuzz ; marche seul, sans fuzz ni préampli |
 
-Ordre du signal : entrée → FUZZ → PREAMP → sortie (le fuzz attaque le préampli). Les deux footswitchs sont
+Ordre du signal : entrée → OCTAVE → FUZZ → PREAMP → sortie (le fuzz attaque le préampli ; l'octave marche seule ou devant eux). Les deux footswitchs sont
 indépendants ; clic = on / off, appui maintenu (> 0,45 s) quand la section était coupée = momentané
 (désactivable, clic droit > Settings). Noise gate intégré (clic droit > Noise gate : Off / Light par défaut / Medium / Strong).
 
@@ -45,7 +45,7 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
   90 / 1 = 0,003, 65 / 3 = 0,006, 100 / 7 = 0,016, 75 / 9 = 0,05 — du même ordre que l'erreur des captures elles-mêmes.
 - À une fréquence autre que 48 kHz : rééchantillonnage sinc (Kaiser) vers 48 kHz et retour, latence déclarée au DAW.
 - Processeur : ~10 à 15 % d'un cœur avec une capture, ~20 à 30 % entre deux positions de capture.
-- v1.2.4 : OCTAVE une octave plus bas (deux octaves sous la note). v1.2.3 : plus de décrochage de l'octave (note gardée tant qu'il y a du signal, changement de note confirmé, power chords reconnus, détection plus sélective). v1.2.2 : octave stable en accordage très bas (suivi de hauteur), niveau d'origine. v1.2.1 : fuzz muet sous Windows corrigé (les architectures NAM sont désormais enregistrées explicitement : l'éditeur de liens les écartait de la bibliothèque statique du plugin). v1.2.0 : correctif du fuzz muet sous Windows (compilation AVX2 retirée : alignement mémoire des réseaux NAM non garanti par Windows) ; garde-fou : un réseau qui sortirait une valeur non finie est écarté puis réinitialisé hors du thread audio ; la barre de presets signale « fuzz captures not loaded » si les captures ne se chargent pas.
+- v1.3.0 : OCTAVE = générateur d'octaves polyphonique (son Baritone Growl de FOG Z, reconstruit d'après sa notice : ~190 filtres complexes à 12 kHz, pics du spectre seuls, phase divisée par 2 et 4, porte par bande, suiveur d'arrêt, porte de repos), actif sans le fuzz ; potard VOLUME rapproché de DISTORTION (triangle avec TONE). v1.2.4 : OCTAVE une octave plus bas (deux octaves sous la note). v1.2.3 : plus de décrochage de l'octave (note gardée tant qu'il y a du signal, changement de note confirmé, power chords reconnus, détection plus sélective). v1.2.2 : octave stable en accordage très bas (suivi de hauteur), niveau d'origine. v1.2.1 : fuzz muet sous Windows corrigé (les architectures NAM sont désormais enregistrées explicitement : l'éditeur de liens les écartait de la bibliothèque statique du plugin). v1.2.0 : correctif du fuzz muet sous Windows (compilation AVX2 retirée : alignement mémoire des réseaux NAM non garanti par Windows) ; garde-fou : un réseau qui sortirait une valeur non finie est écarté puis réinitialisé hors du thread audio ; la barre de presets signale « fuzz captures not loaded » si les captures ne se chargent pas.
 
 ## Interface
 

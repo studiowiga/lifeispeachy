@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstdint>
 #include <algorithm>
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <vector>
@@ -237,127 +238,115 @@ namespace peachy
     };
 
     //--------------------------------------------------------------------------
-    // Octave grave : bascule a f/2 (comme en analogique) multipliee par le signal. Pour tenir la note sur les
-    // accordages tres graves (7 et 8 cordes, jusqu'a ~25 Hz), ou l'harmonique 2 domine la fondamentale, la detection
-    // est accordee sur la fondamentale trouvee par un suivi de hauteur YIN (signal decime a 3 kHz, fenetre 64 ms,
-    // mise a jour toutes les 3,3 ms) : passe-bande + deux passe-bas centres sur f0, hysteresis, garde de 0,7 periode.
-    // Tenue : la note suivie est gardee tant qu'il y a du signal (jamais de retour a un filtre fixe en cours de note),
-    // une nouvelle hauteur doit etre confirmee 3 fois, minimum global si le creux YIN est flou (fin de note, corde
-    // inharmonique). Power chord (quinte) : periode commune double sans energie a f -> on remonte a la fondamentale.
-    // Un indice de confiance (intervalles reguliers) ouvre l'octave en fondu : pas de grenaille sur l'attaque.
-    struct OctaveDown
+    // Moteur d'octaves polyphonique facon FOG Z (d'apres sa notice) : banc de ~190 filtres complexes (3 etages),
+    // seuls les pics du spectre parlent, phase divisee par 2 / par 4 suivie echantillon par echantillon,
+    // porte de bruit par bande, suiveur d'arret, porte de repos (12 dB au-dessus du bruit appris).
+    // Preset Baritone Growl : DRY -14,4 dB, -2 -17,0 dB, -1 +1,1 dB, +1/+2 coupes, LP 1,3 kHz Q 3,2 (niveau compense),
+    // DRY FX off (le direct reste propre), limiteur doux en sortie.
+    struct PolyOctave
     {
-        static constexpr double BPQ = 1.4;
-        static constexpr int D = 16, RB = 1024, W = 192, MAXL = 200, MINL = 6, HOP = 10;
-        Biquad hp, dec1, dec2, bp, lp, lp2, body; OnePole smooth;
-        static constexpr int G = 512;
-        float ring[RB] = {}; float hann[G] = {}; float dft[MAXL + 2] = {}; float ybuf[W + MAXL + 2] = {};
-        int rpos = 0, dcount = 0, hop = 0, since = 0, lastGap = 0, silentHops = 0, pendHops = 0;
-        float env = 0, relEnv = 0.999f, ff = 1.0f, ff2 = 1.0f, f0 = 0, fTuned = -1, conf = 0, confG = 0, confA = 0.999f, pend = 0;
-        bool high = false; double fs = 48000;
+        static constexpr double Fi = 12000.0;              // cadence interne
+        struct Band { float cr, ci, g0;                   // pole complexe et gain de normalisation
+                      float s[3][2];                      // 3 etages (re, im)
+                      float mag = 0, gain = 0;
+                      float u1r = 1, u1i = 0, u2r = 1, u2i = 0; bool live = false; };
+        std::vector<Band> bands; std::vector<float> mags;
+        SincResampler dn, upR; Biquad lpf, dcIn; double fs = 48000;
+        float att = 0, rel = 0, comp = 1;
+        float envF = 0, envS = 0, floorN = 1e-4f, aF = 0, aS = 0, floorUp = 0, stopG = 0, idleG = 0, aStop = 0, aIdle = 0;
+        float gDry = 0.1905f, g1 = 1.135f, g2 = 0.141f;
         void prepare (double sr)
         {
-            fs = sr; hp.highpass (sr, 20.0, 0.7); dec1.lowpass (sr, 700.0, 0.54); dec2.lowpass (sr, 700.0, 1.31);
-            body.lowpass (sr, 900.0, 0.7); smooth.setLP (sr, 1400.0);
-            for (int i = 0; i < G; ++i) hann[i] = (float) (0.5 - 0.5 * std::cos (2 * pi * (i + 0.5) / G));
-            relEnv = (float) std::exp (-1.0 / (0.150 * sr)); confA = (float) std::exp (-1.0 / (0.025 * sr));
+            fs = sr; bands.clear();
+            dn.prepare (sr, Fi); upR.prepare (Fi, sr);
+            std::vector<double> cf;
+            for (double f = 21.0; f < 360.0; f += 7.0) cf.push_back (f);
+            for (double f = 360.0; f < 5200.0; f *= std::pow (2.0, 1.0 / 36.0)) cf.push_back (f);
+            for (size_t k = 0; k < cf.size(); ++k)
+            {
+                const double spacing = k + 1 < cf.size() ? cf[k + 1] - cf[k] : cf[k] - cf[k - 1];
+                const double b1 = (0.5 * spacing * 1.15) / 0.5098;          // demi-largeur par etage (3 etages -> -3 dB a +-espacement/2)
+                const double r = std::exp (-2 * pi * b1 / Fi), w = 2 * pi * cf[k] / Fi;
+                Band b; b.cr = (float) (r * std::cos (w)); b.ci = (float) (r * std::sin (w)); b.g0 = (float) (1 - r);
+                std::memset (b.s, 0, sizeof (b.s)); bands.push_back (b);
+            }
+            mags.assign (bands.size(), 0.0f);
+            lpf.lowpass (Fi, 1300.0, 3.2); comp = (float) (1.0 / std::sqrt (3.2 / 0.7071));
+            dcIn.highpass (Fi, 18.0, 0.7);
+            att = (float) std::exp (-1.0 / (0.003 * Fi)); rel = (float) std::exp (-1.0 / (0.012 * Fi));
+            aF = (float) std::exp (-1.0 / (0.030 * Fi)); aS = (float) std::exp (-1.0 / (0.200 * Fi));
+            floorUp = (float) std::exp (-1.0 / (3.0 * Fi));
+            aStop = (float) std::exp (-1.0 / (0.002 * Fi)); aIdle = (float) std::exp (-1.0 / (0.010 * Fi));
             reset();
         }
         void reset()
         {
-            hp.reset(); dec1.reset(); dec2.reset(); bp.reset(); lp.reset(); lp2.reset(); body.reset(); smooth.reset();
-            std::fill (std::begin (ring), std::end (ring), 0.0f);
-            rpos = dcount = hop = since = lastGap = silentHops = pendHops = 0;
-            env = 0; ff = 1.0f; ff2 = 1.0f; f0 = 0; fTuned = -1; conf = confG = 0; pend = 0; high = false; tune (0);
+            for (auto& b : bands) { std::memset (b.s, 0, sizeof (b.s)); b.mag = b.gain = 0; b.live = false; }
+            dn.reset(); upR.reset(); lpf.reset(); dcIn.reset();
+            envF = envS = 0; floorN = 1.0e-4f; stopG = idleG = 0;
         }
-        void tune (float f)
+        static inline void csqrtTrack (float xr, float xi, float& pr, float& pi_)   // racine du phaseur unitaire, continue
         {
-            fTuned = f;
-            if (f <= 0) { bp.highpass (fs, 20.0, 0.6); lp.lowpass (fs, 250.0, 0.6); lp2.lowpass (fs, 300.0, 0.6); return; }
-            bp.bandpass (fs, f, BPQ); lp.lowpass (fs, f * 1.1, 0.6); lp2.lowpass (fs, f * 1.3, 0.7);
+            float a = std::sqrt (std::max (0.0f, 0.5f * (1 + xr))), b = std::sqrt (std::max (0.0f, 0.5f * (1 - xr)));
+            if (xi < 0) b = -b;
+            if (a * pr + b * pi_ < 0) { a = -a; b = -b; }
+            pr = a; pi_ = b;
         }
-        // energie d'une composante (Goertzel) sur la fenetre d'analyse
-        // fenetre de Hann de 170 ms : resout les composantes sous 30 Hz
-        float goertzel (float f) const
+        float tick (float x)                                 // un echantillon a 12 kHz -> voix d'octaves filtrees
         {
-            const double w = 2 * pi * f / (fs / D), c = 2 * std::cos (w); double s1 = 0, s2 = 0;
-            for (int i = 0; i < G; ++i)
+            x = (float) dcIn.process (x);
+            const float ax = std::abs (x);
+            envF = std::max (ax, envF * aF); envS = std::max (ax, envS * aS);
+            floorN = envS < floorN ? envS + 0.0005f * (floorN - envS) : floorN / floorUp;   // plancher de bruit appris
+            floorN = std::max (floorN, 3.0e-6f);
+            const bool idleOpen = envS > 4.0f * floorN;                                    // 12 dB au-dessus du bruit
+            const bool stopping = envF < 0.12f * envS;                                     // la corde vient d'etre etouffee
+            const float tS = stopping ? 0.0f : 1.0f; stopG = tS + aStop * (stopG - tS);
+            const float tI = idleOpen ? 1.0f : 0.0f; idleG = tI + aIdle * (idleG - tI);
+            const size_t N = bands.size();
+            for (size_t k = 0; k < N; ++k)
             {
-                const double s0 = hann[i] * ring[(rpos - G + i + RB * 4) % RB] + c * s1 - s2; s2 = s1; s1 = s0;
-            }
-            return (float) (s1 * s1 + s2 * s2 - c * s1 * s2);
-        }
-        float estimate()                       // 0 = rien de fiable
-        {
-            for (int i = 0; i < W + MAXL; ++i) ybuf[i] = ring[(rpos - (W + MAXL) + i + RB * 4) % RB];
-            float e = 0; for (int i = MAXL; i < W + MAXL; ++i) e += ybuf[i] * ybuf[i];
-            if (e < 2.0e-8f * W) { ++silentHops; return 0; }
-            silentHops = 0;
-            float run = 0; dft[0] = 1;
-            for (int l = 1; l <= MAXL; ++l)
-            {
-                float s = 0;
-                for (int i = 0; i < W; ++i) { const float a = ybuf[MAXL + i] - ybuf[MAXL + i - l]; s += a * a; }
-                run += s; dft[l] = run > 0 ? s * (float) l / run : 1.0f;
-            }
-            int best = -1;
-            for (int l = MINL; l < MAXL; ++l)
-                if (dft[l] < 0.2f) { while (l + 1 < MAXL && dft[l + 1] < dft[l]) ++l; best = l; break; }
-            if (best < 0)
-            {   // pas de creux net : minimum global s'il reste plausible (note qui s'eteint, corde inharmonique)
-                int g = MINL; for (int l = MINL; l < MAXL; ++l) if (dft[l] < dft[g]) g = l;
-                if (dft[g] > 0.45f) return 0;
-                best = g;
-            }
-            const float a = dft[best - 1], b = dft[best], c = dft[best + 1], den = a - 2 * b + c;
-            const float lag = (float) best + (std::abs (den) > 1.0e-9f ? 0.5f * (a - c) / den : 0.0f);
-            float f = (float) (fs / D / lag);
-            // power chord (fondamentale + quinte) : la periode commune vaut deux periodes de la fondamentale,
-            // sans energie a f ; on remonte alors a 2 f (la note jouee)
-            for (int k = 0; k < 2; ++k)
-                if (f < 190.0f && goertzel (f) < 0.025f * goertzel (2 * f)) f *= 2; else break;
-            return (f >= 25.0f && f <= 380.0f) ? f : 0.0f;
-        }
-        void update()
-        {
-            const float f = estimate();
-            if (silentHops > 60) { f0 = 0; pend = 0; return; }      // ~0,2 s de silence : on oublie la note
-            if (f <= 0) return;                                     // incertain : on garde la note suivie
-            if (f0 <= 0) { f0 = f; pend = 0; return; }
-            if (std::abs (f - f0) <= 0.06f * f0) { f0 += 0.3f * (f - f0); pend = 0; pendHops = 0; return; }
-            // nouvelle hauteur : confirmee sur 3 analyses consecutives (8 ms) avant de changer
-            if (pend > 0 && std::abs (f - pend) <= 0.06f * pend) { if (++pendHops >= 2) { f0 = f; pend = 0; pendHops = 0; } }
-            else { pend = f; pendHops = 0; }
-        }
-        inline float process (float x) noexcept
-        {
-            const float h = (float) hp.process (x);
-            const float dd = (float) dec2.process (dec1.process (h));
-            if (++dcount >= D)
-            {
-                dcount = 0; ring[rpos] = dd; rpos = (rpos + 1) % RB;
-                if (++hop >= HOP)
+                Band& b = bands[k];
+                float ir = x, ii = 0;
+                for (int st = 0; st < 3; ++st)
                 {
-                    hop = 0; update();
-                    if ((f0 <= 0) != (fTuned <= 0) || (f0 > 0 && std::abs (f0 - fTuned) > 0.03f * fTuned)) tune (f0);
+                    const float sr = b.s[st][0], si = b.s[st][1];
+                    const float nr = ir + b.cr * sr - b.ci * si, ni = ii + b.cr * si + b.ci * sr;
+                    b.s[st][0] = nr; b.s[st][1] = ni; ir = nr * b.g0; ii = ni * b.g0;
                 }
+                mags[k] = std::sqrt (ir * ir + ii * ii);
             }
-            const float d = (float) lp2.process (lp.process (bp.process (h)));
-            env = std::max (std::abs (d), env * relEnv);
-            ++since;
-            const float th = 0.3f * env + 1.0e-5f;
-            const int minGap = f0 > 0 ? (int) (0.7 * fs / f0) : (int) (fs / 500);
-            if (! high && d > th && since >= minGap)
+            float v1 = 0, v2 = 0;
+            const float bandFloor = 2.0f * floorN + 2.0e-5f;
+            for (size_t k = 0; k < N; ++k)
             {
-                high = true; ff = -ff; if (ff > 0) ff2 = -ff2;            // 2e bascule en cascade : f/4 (deux octaves sous la note)
-                const float ref = f0 > 0 ? (float) (fs / f0) : (float) lastGap;
-                conf = (ref > 0 && std::abs ((float) since - ref) < 0.12f * ref) ? 1.0f : 0.0f;
-                lastGap = since; since = 0;
+                Band& b = bands[k];
+                const float m = mags[k];
+                const bool peak = m > bandFloor && (k == 0 || m > mags[k - 1]) && (k + 1 == N || m >= mags[k + 1]);
+                const float t = peak ? 1.0f : 0.0f;
+                b.gain = t + (t > b.gain ? att : rel) * (b.gain - t);
+                if (b.gain < 1.0e-4f) { b.live = false; continue; }
+                const float zr = b.s[2][0] * b.g0, zi = b.s[2][1] * b.g0;
+                const float inv = m > 1e-12f ? 1.0f / m : 0.0f, ur = zr * inv, ui = zi * inv;
+                if (! b.live)
+                {   // reprise : on part de la racine principale
+                    b.u1r = 1; b.u1i = 0; csqrtTrack (ur, ui, b.u1r, b.u1i);
+                    b.u2r = 1; b.u2i = 0; csqrtTrack (b.u1r, b.u1i, b.u2r, b.u2i); b.live = true;
+                }
+                else { csqrtTrack (ur, ui, b.u1r, b.u1i); csqrtTrack (b.u1r, b.u1i, b.u2r, b.u2i); }
+                const float a = m * b.gain;
+                v1 += a * b.u1r; v2 += a * b.u2r;
             }
-            else if (high && d < -th) high = false;
-            if (since > (int) (fs / 20)) conf = 0;
-            confG = conf + confA * (confG - conf);
-            return smooth.lp ((float) body.process (x) * ff2) * confG;
+            const float wet = 2.0f * (g1 * v1 + g2 * v2) * stopG * idleG;   // filtre complexe : moitie de l amplitude
+            return (float) lpf.process (wet) * comp;
+        }
+        float process (float x)                               // cadence de l'hote
+        {
+            dn.push (x);
+            while (dn.canPull()) upR.push (tick (dn.pull()));
+            const float o = upR.canPull() ? upR.pull() : 0.0f;
+            const float y = gDry * x + o;
+            return std::tanh (y * 0.8f) / 0.8f;                // limiteur doux
         }
     };
 
@@ -480,7 +469,7 @@ namespace peachy
         std::vector<float> in48, out48, mix48, tmp48, io48, dryF, dryP, chunkBuf, gateLine;
         int dryFPos = 0, dryPPos = 0;
         // etat fuzz (domaine 48 kHz)
-        OctaveDown oct; FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
+        PolyOctave poly; bool polyCold = true; FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
         float wCur[numModels] {}; int toneCounter = 0;
         // etat general (frequence du projet)
         Preamp pre; Smooth2 sGain, sPres, sBass, sMid, sTreb, sMaster, sFuzzOn, sPreOn; int preCounter = 0;

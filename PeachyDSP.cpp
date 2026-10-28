@@ -188,9 +188,9 @@ namespace peachy
         dryF.assign ((size_t) (fuzzLat + 1), 0.0f); dryFPos = 0;
         dryP.assign ((size_t) (preLat + 1), 0.0f);  dryPPos = 0;
 
-        oct.prepare (48000.0); toneF.fs = 48000.0;
+        poly.prepare (fs); polyCold = true; toneF.fs = 48000.0;
         for (auto* s : { &sDist, &sTone, &sVol }) s->setTime (48000.0, 25.0);
-        sOct.setTime (48000.0, 12.0);
+        sOct.setTime (fs, 5.0);
         pre.prepare (fs);
         for (auto* s : { &sGain, &sPres, &sBass, &sMid, &sTreb, &sMaster }) s->setTime (fs, 25.0);
         sFuzzOn.setTime (fs, 6.0); sPreOn.setTime (fs, 6.0);
@@ -228,7 +228,7 @@ namespace peachy
             std::fill (buf, buf + m, 0.0f);
             return;
         }
-        // entree des reseaux : octave grave ajoutee, attenuation sous 50 % de DISTORTION
+        // entree des reseaux : attenuation sous 50 % de DISTORTION
         float wStart[numModels], wEnd[numModels];
         weightsFor (sDist.s2 * 10.0f, wStart);
         float* in = in48.data();
@@ -236,11 +236,7 @@ namespace peachy
         {
             const float d = sDist.next (cur.distortion) * 10.0f;         // %
             const float att = d < 50.0f ? dbToGain (-0.46f * (50.0f - d)) : 1.0f;
-            const float om = sOct.next (cur.octave ? 1.0f : 0.0f);
-            float x = buf[j];
-            const float sub = oct.process (x);
-            x += om * 0.7f * sub;                                  // niveau de l'octave (-5 dB par rapport a la v1.2.0)
-            in[j] = x * att;
+            in[j] = buf[j] * att;
             mix48[(size_t) j] = d;                                       // memorise la position (poids par echantillon)
         }
         weightsFor (sDist.s2 * 10.0f, wEnd);
@@ -292,6 +288,20 @@ namespace peachy
             gateLine[(size_t) i] = gg;
         }
 
+        // ---- OCTAVE : generateur d'octaves polyphonique (son du preset Baritone Growl de FOG Z), avant le fuzz,
+        // actif meme fuzz coupe
+        if (p.octave || sOct.s2 > 1.0e-4f)
+        {
+            if (polyCold) { poly.reset(); polyCold = false; }
+            for (int i = 0; i < n; ++i)
+            {
+                const float o = sOct.next (p.octave ? 1.0f : 0.0f);
+                const float y = poly.process (x[i]);
+                x[i] += (y - x[i]) * o;
+            }
+        }
+        else { sOct.reset (0.0f); polyCold = true; }
+
         // ---- FUZZ (domaine 48 kHz des captures)
         float* fz = chunkBuf.data();
         if (resample)
@@ -332,7 +342,7 @@ namespace peachy
             const float pon = sPreOn.next (p.preampOn ? 1.0f : 0.0f);
             float y = dryPr + (pr - dryPr) * pon;
 
-            const float anyOn = std::max (fon, pon);
+            const float anyOn = std::max (std::max (fon, pon), sOct.s2);
             y *= 1.0f - anyOn * (1.0f - gateLine[(size_t) i]);
             // garde-fou (jamais de valeur aberrante vers l'hote)
             if (! std::isfinite (y)) y = 0.0f;

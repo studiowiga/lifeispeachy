@@ -4,7 +4,7 @@
 namespace layout
 {
     // ordre : master, gain, volume, distortion, bass, mid, treble, tone
-    const juce::Point<float> knobPos[8] = { { 266.44f, 182.39f }, { 490.05f, 182.39f }, { 699.61f, 182.39f }, { 1018.04f, 182.39f }, { 152.88f, 391.25f }, { 369.46f, 391.25f }, { 596.59f, 391.25f }, { 892.78f, 391.25f } };
+    const juce::Point<float> knobPos[8] = { { 266.44f, 182.39f }, { 490.05f, 182.39f }, { 767.65f, 182.39f }, { 1018.04f, 182.39f }, { 152.88f, 391.25f }, { 369.46f, 391.25f }, { 596.59f, 391.25f }, { 892.78f, 391.25f } };
     const float knobR = 54.00f, knobTopR = 45.36f;
     const juce::Point<float> presPos { 500.58f, 552.53f }; const float presR = 22.68f, presTopR = 17.82f;
     const juce::Point<float> octPos { 1046.15f, 391.25f }; const float toggleS = 118.80f;

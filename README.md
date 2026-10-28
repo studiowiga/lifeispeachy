@@ -2,7 +2,7 @@
 
 Préampli saturé + fuzz au **format pédale double**, d'après une pédale « préampli + fuzz » au son des sessions
 metal du milieu des années 90 (7 cordes accordées bas). Disposition des commandes reprise de la pédale d'origine,
-habillage original Studio Wiga (peinture noire versée sur façade rouge). Usage personnel. Windows 11 et macOS
+habillage Studio Wiga d'après le visuel de l'utilisateur (cadre noir peint, bande noire rayée de rouge en haut, rouge en dégradé, inscriptions manuscrites). Usage personnel. Windows 11 et macOS
 (binaire universel).
 
 ## Installation via GitHub
@@ -51,7 +51,7 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
 - Fenêtre ouverte à **661 × 495** (taille de Ring Think), impossible de la réduire en dessous, proportions bloquées.
   Clic droit > *Window size* : défaut / 75 % / 100 % (993 × 743).
 - **Barre de presets** : flèches = précédent / suivant, clic sur le nom = menu (10 presets d'usine, presets utilisateur 1 à 9).
-- **Ligne d'état** : réglage de la commande que l'on bouge (potards en %), dans la police des inscriptions de la pédale.
+- **Ligne d'état** : réglage de la commande que l'on bouge (potards en %), dans la police manuscrite des inscriptions de la pédale (Shadows Into Light).
 - Potards : seul le repère blanc peint tourne, les reflets du biseau chromé restent fixes (lumière en haut à gauche).
 - Footswitchs : celui d'Echoflex (référence Studio Wiga), bouton assombri tant qu'on appuie. LED rouges en fondu,
   la façade s'éclaire autour.
@@ -86,4 +86,4 @@ saccades (rampe entre deux CC, course apprise automatiquement, zones mortes aux 
 - `tools/make_art.py` génère tout le visuel (fond, inverseur, calques des LED, `Layout.h`) · `tools/render` captures
   de la vraie fenêtre sous Linux · `tests/test_dsp.cpp` banc d'essai audio
 - `models/` captures NAM du fuzz (TONE 5) intégrées au plugin · `third_party/` NeuralAmpModelerCore (MIT), nlohmann/json (MIT)
-- Police : Special Elite (Apache 2.0) pour les inscriptions et la ligne d'état
+- Police : Shadows Into Light (OFL) pour les inscriptions et la ligne d'état ; Poppins pour la notice

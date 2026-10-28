@@ -7,8 +7,8 @@ using namespace juce;
 namespace
 {
     // repere 1240 x 928 (fond 2480 x 1856), positions generees par tools/make_art.py dans Layout.h
-    const Rectangle<float> statusRect { 420.0f, 664.0f, 400.0f, 54.0f };
-    const Rectangle<float> presetRect { 440.0f, 740.0f, 360.0f, 42.0f };
+    const Rectangle<float> statusRect { 420.0f, 648.0f, 400.0f, 56.0f };
+    const Rectangle<float> presetRect { 440.0f, 722.0f, 360.0f, 44.0f };
 
     const float rotStart = MathConstants<float>::pi * (7.0f / 6.0f);    // -150 degres
     const float rotEnd   = MathConstants<float>::pi * (17.0f / 6.0f);   // +150 degres
@@ -165,8 +165,8 @@ PeachyAudioProcessorEditor::PeachyAudioProcessorEditor (PeachyAudioProcessor& p)
     glow[0]    = ImageCache::getFromMemory (BinaryData::glow_l_png, BinaryData::glow_l_pngSize);
     glow[1]    = ImageCache::getFromMemory (BinaryData::glow_r_png, BinaryData::glow_r_pngSize);
     octSwitch.strip = ImageCache::getFromMemory (BinaryData::toggle_strip_png, BinaryData::toggle_strip_pngSize);
-    // police des inscriptions de la pedale (Special Elite) pour la ligne d'etat et la barre de presets
-    labelFace = Typeface::createSystemTypefaceFor (BinaryData::SpecialEliteRegular_ttf, BinaryData::SpecialEliteRegular_ttfSize);
+    // police des inscriptions de la pedale (Shadows Into Light, ecriture a la main) pour la ligne d'etat et la barre de presets
+    labelFace = Typeface::createSystemTypefaceFor (BinaryData::ShadowsIntoLight_ttf, BinaryData::ShadowsIntoLight_ttfSize);
 
     rightClickFwd.callback = [this] { showContextMenu(); };
 
@@ -431,7 +431,7 @@ void PeachyAudioProcessorEditor::drawStatus (Graphics& g)
     g.fillRoundedRectangle (statusRect, 9.0f);
     g.setColour (accent.withAlpha (0.55f * a));
     g.drawRoundedRectangle (statusRect.reduced (0.75f), 9.0f, 1.6f);
-    g.setFont (Font (FontOptions (labelFace).withHeight (36.0f)));
+    g.setFont (Font (FontOptions (labelFace).withHeight (64.0f)));
     g.setColour (inkWhite.withAlpha (a));
     g.drawFittedText (lastLine1, statusRect.reduced (12.0f, 0.0f).toNearestInt(), Justification::centred, 1, 0.75f);
 }
@@ -454,7 +454,7 @@ void PeachyAudioProcessorEditor::drawPresetBar (Graphics& g)
     };
     arrow (r.withWidth (aw), true, hoverZone == 1);
     arrow (r.withTrimmedLeft (r.getWidth() - aw), false, hoverZone == 3);
-    g.setFont (Font (FontOptions (labelFace).withHeight (27.0f)));
+    g.setFont (Font (FontOptions (labelFace).withHeight (46.0f)));
     g.setColour ((midiFlash > 0 ? Colour (0xffff9a80) : inkWhite).withAlpha (hoverZone == 2 ? 1.0f : 0.90f));
     g.drawFittedText (lastPreset, r.reduced (aw, 0.0f).toNearestInt(), Justification::centred, 1, 0.7f);
 }

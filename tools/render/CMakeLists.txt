@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 add_subdirectory(${JUCE_DIR} JUCE)
 set(W ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 juce_add_binary_data(PeachyAssets SOURCES
-  ${W}/background.jpg ${W}/toggle_strip.png ${W}/glow_l.png ${W}/glow_r.png ${W}/assets/fonts/SpecialElite-Regular.ttf
+  ${W}/background.jpg ${W}/toggle_strip.png ${W}/glow_l.png ${W}/glow_r.png ${W}/assets/fonts/ShadowsIntoLight.ttf
   ${W}/models/fuzz_G50.nam ${W}/models/fuzz_G65.nam ${W}/models/fuzz_G75.nam ${W}/models/fuzz_G90.nam ${W}/models/fuzz_G100.nam)
 juce_add_console_app(PeachyRender PRODUCT_NAME "PeachyRender")
 file(GLOB NAM_SOURCES ${W}/third_party/NAM/*.cpp ${W}/third_party/NAM/*/*.cpp)

@@ -40,7 +40,7 @@ endif()
 
 # visuel, police et captures NAM integres au plugin (aucun fichier externe a l'execution)
 juce_add_binary_data(PeachyAssets SOURCES
-  background.jpg toggle_strip.png glow_l.png glow_r.png assets/fonts/SpecialElite-Regular.ttf
+  background.jpg toggle_strip.png glow_l.png glow_r.png assets/fonts/ShadowsIntoLight.ttf
   models/fuzz_G50.nam models/fuzz_G65.nam models/fuzz_G75.nam models/fuzz_G90.nam models/fuzz_G100.nam)
 set_target_properties(PeachyAssets PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 

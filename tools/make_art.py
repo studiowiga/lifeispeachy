@@ -11,7 +11,8 @@ Sorties (racine du depot) :
   toggle_strip.png      inverseur OCTAVE : 3 images carrees empilees (haut = ON, intermediaire, bas = OFF)
   glow_l.png / glow_r.png  facade eclairee par chaque LED (canal alpha = seule la lumiere ajoutee)
   Layout.h              reperes des commandes
-Habillage sans motif central ni nom (demande de l'utilisateur) : coulures en haut, rouge qui fonce vers les coins bas.
+Habillage d'apres le visuel fourni par l'utilisateur : cadre noir peint, bande noire rayee de rouge en haut, rouge en degrade,
+inscriptions manuscrites (lettres normales).
 Usage : python3 tools/make_art.py
 """
 import os, math
@@ -103,158 +104,105 @@ encl = paint_black * (0.55 + 0.75 * ndl)[..., None] + (70 * ndh ** 40 + 18 * ndh
 encl += fbm((H, W), [2], [1.5], 3)[..., None]
 img = img * (1 - body[..., None]) + encl * body[..., None]
 
-# ------------------------------------------------------------------ 3. facade rouge serigraphiee
+# ------------------------------------------------------------------ 3. facade serigraphiee : cadre noir irregulier, bande noire rayee de rouge
+#     en haut, rouge en degrade (plus profond en haut, plus clair en bas) - d'apres le visuel fourni par l'utilisateur
 FI = 15.0                                                  # retrait de l'impression par rapport au bord
 fsd = rrect_sd(UX, UY, PX0 + FI, PY0 + FI, PW - 2 * FI, PH - 2 * FI, PR - FI + 4)
 edge_noise = fbm((H, W), [3, 14], [0.5, 0.9], 11)
 face = np.clip(0.5 - (fsd + edge_noise * 0.9) * AS, 0, 1)
-red = np.array([166.0, 22.0, 27.0])
-mott = 1.0 + 0.05 * fbm((H, W), [60, 180], [0.6, 0.8], 5) + 0.03 * fbm((H, W), [4], [1.0], 6)
-light = 1.0 + 0.07 * np.clip(1 - (UX - PX0) / PW * 0.6 - (UY - PY0) / PH * 0.6, -1, 1)   # leger degrade vers la lumiere
-sheen = 20 * np.exp(-(((UX - 330) / 420) ** 2 + ((UY - 170) / 300) ** 2))               # satin : reflet tres large
-redc = red[None, None, :] * (mott * light)[..., None] + sheen[..., None] * np.array([1.0, 0.6, 0.6])
-# usure : quelques micro-rayures plus claires
-scr = np.zeros((H, W), np.float32)
-for _ in range(70):
-    x0, y0 = rng.uniform(PX0 + 30, PX0 + PW - 30) * AS, rng.uniform(PY0 + 30, PY0 + PH - 30) * AS
-    a = rng.uniform(0, math.pi); l = rng.uniform(6, 40) * AS
-    cv2.line(scr, (int(x0), int(y0)), (int(x0 + l * math.cos(a)), int(y0 + l * math.sin(a))), float(rng.uniform(0.2, 0.6)), 1, cv2.LINE_AA)
-redc += cv2.GaussianBlur(scr, (0, 0), 0.6)[..., None] * np.array([40.0, 22.0, 22.0])
-dark = np.clip((UY - (PY0 + 0.42 * PH)) / (0.58 * PH), 0, 1) ** 1.4
-dark *= np.clip(np.abs(UX - (PX0 + PW / 2)) / (PW * 0.42), 0, 1) ** 1.2 * 0.9 + 0.12
-redc *= (1 - 0.84 * np.clip(dark, 0, 1))[..., None]
+t_ = np.clip((UY - (PY0 + 0.22 * PH)) / (0.72 * PH), 0, 1)
+red = np.dstack([(150 + 82 * t_ ** 0.9), (14 + 36 * t_ ** 1.2), (19 + 36 * t_ ** 1.2)])     # rouge profond -> rouge vif
+mott = 1.0 + 0.035 * fbm((H, W), [60, 180], [0.6, 0.8], 5) + 0.03 * fbm((H, W), [3], [1.0], 6)   # grain de peinture texturee
+light = 1.0 + 0.05 * np.clip(1 - (UX - PX0) / PW * 0.6 - (UY - PY0) / PH * 0.6, -1, 1)
+sheen = 16 * np.exp(-(((UX - 330) / 420) ** 2 + ((UY - 170) / 300) ** 2))
+redc = red * (mott * light)[..., None] + sheen[..., None] * np.array([1.0, 0.6, 0.6])
 img = img * (1 - face[..., None]) + redc * face[..., None]
 
-# ------------------------------------------------------------------ 4. encre noire : masque (sur-echantillonne 2x)
+# ------------------------------------------------------------------ 4. encre noire (masques sur-echantillonnes 2x)
 SS = 2
-INK = Image.new('L', (W * SS, H * SS), 0)
-dr = ImageDraw.Draw(INK)
 K = AS * SS
+KW, KH = W * SS, H * SS
 def U2(x, y): return (x * K, y * K)
+yy2, xx2 = np.mgrid[0:KH, 0:KW].astype(np.float32)
+ux2, uy2 = (xx2 + 0.5) / K, (yy2 + 0.5) / K
+def fbm2(scales, amps, seed):
+    r = np.random.default_rng(seed); out = np.zeros((KH, KW), np.float32)
+    for sc_, a_ in zip(scales, amps):
+        n = r.standard_normal((KH // int(sc_ * K) + 2, KW // int(sc_ * K) + 2)).astype(np.float32)
+        out += a_ * cv2.resize(n, (KW, KH), interpolation=cv2.INTER_CUBIC)
+    return out
 
-# keep-out : zones des commandes (l'encre y est permise, mais pas les eclaboussures)
-keep = [(P(u, v), KNOB_R + 18) for (u, v, _) in KNOBS.values()] + [(PRES, 40), (OCT, 45), (LED_L, 30), (LED_R, 30), (FS_L, 70), (FS_R, 70)]
-def free(x, y, r):
-    for (cx, cy), rr in keep:
-        if math.hypot(x - cx, y - cy) < rr + r: return False
-    return True
+# 4a. cadre noir peint a la main (bord interieur dechiquete) + bande noire du haut
+ins = rrect_sd(ux2, uy2, PX0 + FI, PY0 + FI, PW - 2 * FI, PH - 2 * FI, PR - FI + 4)        # < 0 dans l'impression
+rag = fbm2([1.5, 5, 18], [1.0, 1.6, 2.6], 31)
+FRAME = 13.0
+frame = (ins + FRAME + rag) > 0                                                          # bande le long du bord
+BAND_Y = PY0 + 0.258 * PH                                                                # bas de la bande noire du haut
+band_edge = BAND_Y + 4.0 * np.sin(ux2 * 0.031) + 3.0 * np.sin(ux2 * 0.11 + 1.3) + fbm2([1.5, 6], [1.6, 2.4], 32)
+band = uy2 < band_edge
+black = (frame | band).astype(np.float32)
 
-# 4a. peinture noire versee depuis le haut : bande epaisse ondulee + grosses coulures qui descendent loin
-#     (elles passent derriere les potards ; les inscriptions qu'elles croisent sont reservees en rouge)
-topy = PY0 + FI
-def band_y(x):
-    return topy + 26 + 9 * math.sin(x * 0.021 + 0.7) + 6 * math.sin(x * 0.057 + 2.0) + 3 * math.sin(x * 0.13)
-pts = [U2(PX0, topy - 14)] + [U2(x, band_y(x)) for x in np.linspace(PX0, PX0 + PW, 400)] + [U2(PX0 + PW, topy - 14)]
-dr.polygon(pts, fill=255)
-# (x, longueur sous la bande, largeur)
-DRIPS = [(112, 255, 24), (160, 92, 13), (205, 40, 10), (228, 175, 26), (372, 58, 12), (408, 26, 9),
-         (441, 470, 23), (558, 30, 11), (592, 150, 20), (618, 52, 10), (782, 560, 32),
-         (828, 175, 16), (866, 70, 12), (884, 150, 20), (1106, 385, 27), (1142, 150, 15)]
-def drip(x, ln, w0):
-    y0 = band_y(x) - 6
-    n = 160
-    left, right = [], []
-    ph = x * 0.37
-    for i in range(n + 1):
-        t = i / n
-        y = y0 + ln * t
-        # col evase sous la bande, corps qui s'affine puis se renfle avant la goutte
-        w = w0 * (0.78 + 0.55 * math.exp(-t * 14) - 0.22 * t + 0.10 * math.sin(t * 7 + ph))
-        cx = x + 2.2 * math.sin(t * 4.0 + ph) * (w0 / 20)
-        left.append(U2(cx - w / 2, y)); right.append(U2(cx + w / 2, y))
-    dr.polygon(left + right[::-1], fill=255)
-    # goutte terminale (un peu plus large, en forme de larme)
-    bw = w0 * (0.78 - 0.22 + 0.10 * math.sin(7 + ph)) * 1.32
-    cx = x + 2.2 * math.sin(4.0 + ph) * (w0 / 20)
-    yb = y0 + ln
-    dr.ellipse([U2(cx - bw / 2, yb - bw * 0.55), U2(cx + bw / 2, yb + bw * 0.62)], fill=255)
-    # petite goutte detachee sous les longues coulures
-    if ln > 200:
-        r_ = w0 * 0.22
-        dr.ellipse([U2(cx - r_, yb + bw * 0.62 + w0 * 0.55), U2(cx + r_, yb + bw * 0.62 + w0 * 0.55 + 2.4 * r_)], fill=255)
-for x, ln, w0 in DRIPS:
-    drip(x, ln, w0)
-# accumulations de peinture dans la bande (petites bosses vers le bas entre les coulures)
-for x in np.linspace(PX0 + 30, PX0 + PW - 30, 26):
-    r_ = rng.uniform(6, 13)
-    dr.ellipse([U2(x - r_ * 1.6, band_y(x) - r_), U2(x + r_ * 1.6, band_y(x) + r_ * 0.75)], fill=255)
+# 4b. rayures rouges horizontales dans la bande noire (traits de pinceau secs, extremites effilochees)
+stripes = np.zeros((KH, KW), np.float32)
+rs = np.random.default_rng(41)
+y0s = PY0 + FI + 26.0
+rows = np.linspace(y0s, BAND_Y - 18.0, 6)
+for i, yc in enumerate(rows):
+    # chaque rayure : un ou deux tronçons, epaisseur 5 a 9 unites, bord tremble
+    segs = [(PX0 + 70 + rs.uniform(-25, 40), PX0 + PW - 70 - rs.uniform(-25, 40))]
+    if rs.uniform() < 0.45:
+        cut = rs.uniform(PX0 + 300, PX0 + PW - 300); gap = rs.uniform(30, 90)
+        segs = [(segs[0][0], cut - gap / 2), (cut + gap / 2, segs[0][1])]
+    th = rs.uniform(8.0, 12.0)
+    wob = 1.6 * np.sin(ux2 * rs.uniform(0.01, 0.02) + i) + fbm2([2, 9], [0.5, 1.0], 50 + i)
+    for xa, xb in segs:
+        tx = np.clip(np.minimum(ux2 - xa, xb - ux2) / 22.0, 0, 1)                      # effilochage aux extremites
+        thick = th * (0.45 + 0.55 * tx) + fbm2([1.2, 4], [0.7, 0.9], 70 + i)
+        m = (np.abs(uy2 - (yc + wob)) < thick / 2) & (ux2 > xa) & (ux2 < xb)
+        stripes = np.maximum(stripes, m.astype(np.float32))
+# trous de brosse seche dans les rayures
+dry = (fbm2([0.8, 2.5], [1.0, 0.8], 90) > 1.7).astype(np.float32)
+stripes *= 1 - dry * 0.9
+stripes *= band.astype(np.float32) * (~frame).astype(np.float32)
 
-FONT_LAB = os.path.join(ROOT, 'assets', 'fonts', 'SpecialElite-Regular.ttf')
-
-# 4d. inscriptions des commandes (Special Elite, minuscules)
-labs = Image.new('L', INK.size, 0); dlab = ImageDraw.Draw(labs)
-flab = ImageFont.truetype(FONT_LAB, int(31 * K))
+# 4c. inscriptions (ecriture a la main fine) : rouges dans la bande noire, noires sur le rouge
+FONT_LAB = os.path.join(ROOT, 'assets', 'fonts', 'ShadowsIntoLight.ttf')
+flab = ImageFont.truetype(FONT_LAB, int(44 * K))
+lab_red = Image.new('L', (KW, KH), 0); lab_blk = Image.new('L', (KW, KH), 0)
 LABEL_POS = {}
 for kid, (u, v, txt) in KNOBS.items():
     x, y = P(u, v)
-    LABEL_POS[kid] = (x, y - KNOB_R - 22)
-    dlab.text(U2(x, y - KNOB_R - 22), txt, font=flab, fill=255, anchor='mm')
-dlab.text(U2(OCT[0], OCT[1] - 62), "octave", font=flab, fill=255, anchor='mm')
-dlab.text(U2(PRES[0] + 36, PRES[1] + 26), "presence", font=ImageFont.truetype(FONT_LAB, int(25 * K)), fill=255, anchor='lm')
-lab_ink = np.asarray(labs, np.float32) / 255.0
-
-# 4e. eclaboussures (hors commandes) : quelques gerbes autour de la peche et du nom, brume fine pres des footswitchs
-spl = Image.new('L', INK.size, 0); dsp = ImageDraw.Draw(spl)
-def splash(cx, cy, n, spread, rmax):
-    for _ in range(n):
-        a = rng.uniform(0, 2 * math.pi); d = abs(rng.normal(0, spread))
-        r = rmax * math.exp(-d / spread) * rng.uniform(0.25, 1.0)
-        x, y = cx + d * math.cos(a), cy + d * math.sin(a)
-        if r < 0.7 or not free(x, y, r): continue
-        dsp.ellipse([U2(x - r, y - r), U2(x + r, y + r)], fill=255)
-        if r > 2.5 and rng.uniform() < 0.4:          # trainee
-            for t in np.linspace(0, 1, 8):
-                rr = r * (1 - 0.8 * t) * 0.55
-                xx, yy = x + math.cos(a) * r * 3 * t, y + math.sin(a) * r * 3 * t
-                dsp.ellipse([U2(xx - rr, yy - rr), U2(xx + rr, yy + rr)], fill=255)
-splash(430, 690, 60, 50, 7)
-splash(800, 700, 60, 45, 6)
-splash(1080, 480, 50, 40, 5)
-splash(190, 560, 50, 45, 5)
-splash(250, 300, 25, 30, 4)
-for _ in range(1800):                                   # brume (aerographe) dans les coins bas
-    side = rng.integers(2)
-    cx = PX0 + (40 if side == 0 else PW - 40); cy = PY0 + PH - 30
-    x = cx + rng.normal(0, 90) * (1 if side == 0 else -1) * 0.8; y = cy - abs(rng.normal(0, 70))
-    r = rng.uniform(0.4, 1.6)
-    if free(x, y, r) and rrect_sd(np.float32(x), np.float32(y), PX0 + FI, PY0 + FI, PW - 2 * FI, PH - 2 * FI, PR - FI) < -2:
-        dsp.ellipse([U2(x - r, y - r), U2(x + r, y + r)], fill=255)
-spl_ink = np.asarray(spl, np.float32) / 255.0
-
-paint2 = np.asarray(INK, np.float32) / 255.0                          # peinture versee (relief brillant)
-paint = cv2.resize(paint2, (W, H), interpolation=cv2.INTER_AREA)
-lab_mask = cv2.resize(lab_ink, (W, H), interpolation=cv2.INTER_AREA)
-spl_mask = cv2.resize(spl_ink, (W, H), interpolation=cv2.INTER_AREA)
-# inscriptions : noires sur le rouge, reservees (rouges) dans la peinture noire
-ink = np.maximum(paint * (1 - lab_mask), lab_mask * (1 - paint))
-ink = np.maximum(ink, spl_mask * (1 - lab_mask))
-# serigraphie usee : micro-manques dans les aplats imprimes (pas dans la peinture epaisse)
-wear = cv2.GaussianBlur((fbm((H, W), [1, 3], [1.0, 0.6], 21) > 2.05).astype(np.float32), (0, 0), 0.5)
-ink = ink * (1 - wear * (1 - lab_mask) * (1 - paint) * 0.85)
+    ly = y - KNOB_R - 20
+    LABEL_POS[kid] = (x, ly)
+    tgt = lab_red if ly < BAND_Y - 6 else lab_blk
+    ImageDraw.Draw(tgt).text(U2(x, ly), txt, font=flab, fill=255, anchor='mm')
+ImageDraw.Draw(lab_blk).text(U2(OCT[0], OCT[1] - 58), "octave", font=ImageFont.truetype(FONT_LAB, int(38 * K)), fill=255, anchor='mm')
+ImageDraw.Draw(lab_blk).text(U2(PRES[0] + 34, PRES[1] + 4), "presence", font=ImageFont.truetype(FONT_LAB, int(38 * K)), fill=255, anchor='lm')
+lr = np.asarray(lab_red, np.float32) / 255.0
+lb = np.asarray(lab_blk, np.float32) / 255.0
+# les rayures s'interrompent autour des inscriptions rouges (comme sur le visuel)
+halo = cv2.dilate((lr > 0.3).astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(10 * K), int(6 * K)))).astype(np.float32)
+stripes *= 1 - halo
+ink2 = np.clip(black * (1 - stripes) * (1 - lr), 0, 1)
+ink2 = np.maximum(ink2, lb)
+ink = cv2.resize(ink2, (W, H), interpolation=cv2.INTER_AREA)
+# serigraphie : micro-manques dans les aplats (texture de peinture)
+wear = cv2.GaussianBlur((fbm((H, W), [1, 3], [1.0, 0.6], 21) > 2.25).astype(np.float32), (0, 0), 0.5)
+ink = ink * (1 - wear * 0.6)
 ink *= face
-ink_col = np.array([13.0, 10.0, 11.0]) * (0.9 + 0.2 * light)[..., None] + (sheen * 0.3)[..., None]
-# peinture epaisse et brillante : relief tire de la distance au bord, reflet de la lumiere en haut a gauche
-dist = cv2.distanceTransform((paint > 0.5).astype(np.uint8), cv2.DIST_L2, 5) / AS
-hp = np.sqrt(np.clip(dist, 0, 6.0) / 6.0) * 3.2
-hp = cv2.GaussianBlur(hp, (0, 0), 1.2 * AS)
-gy_, gx_ = np.gradient(hp, 1.0 / AS)
-n_ = np.dstack([-gx_, -gy_, np.ones_like(hp)]); n_ /= np.linalg.norm(n_, axis=2, keepdims=True)
-spec = np.clip(n_ @ HV, 0, 1) ** 60 * 150 + np.clip(n_ @ HV, 0, 1) ** 8 * 18
-rim = np.clip(-(n_ @ L) + 0.55, 0, 1) * 0.35                          # bord oppose a la lumiere un peu plus sombre
-gloss = (spec * paint)[..., None] * np.array([1.0, 0.93, 0.95])
-pcol = ink_col * (1 - rim[..., None] * paint[..., None]) + gloss
-col = np.where((paint > 0.02)[..., None] & (lab_mask < 0.5)[..., None], pcol, ink_col)
-img = img * (1 - ink[..., None]) + col * ink[..., None]
-# ombre portee tres legere de la peinture en relief sur la facade
-psh = cv2.GaussianBlur(cv2.warpAffine(paint, np.float32([[1, 0, 2.0 * AS], [0, 1, 2.8 * AS]]), (W, H)), (0, 0), 2.0 * AS)
-img *= (1 - 0.35 * psh * (1 - paint) * face)[..., None]
+ink_col = np.array([15.0, 13.0, 14.0]) * (0.9 + 0.2 * light)[..., None] + (sheen * 0.3)[..., None]
+img = img * (1 - ink[..., None]) + ink_col * ink[..., None]
+# encre rouge des rayures et des inscriptions du haut : le meme rouge vif que le bas de la facade
+redtop = cv2.resize(np.clip(stripes + lr, 0, 1) * band.astype(np.float32) * (~frame).astype(np.float32), (W, H), interpolation=cv2.INTER_AREA) * face
+red_ink = np.array([214.0, 34.0, 36.0])[None, None, :] * (mott * light)[..., None]
+img = img * (1 - redtop[..., None]) + red_ink * redtop[..., None]
 
 # ------------------------------------------------------------------ 5. logo Studio Wiga (noir), tout en bas
 logo = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'logo_studio_wiga_blanc.png')).convert('RGBA')).astype(np.float32)
 LOGO_W = 250.0
 lw, lh = int(LOGO_W * AS), int(LOGO_W * AS * logo.shape[0] / logo.shape[1])
 la = cv2.resize(logo[..., 3], (lw, lh), interpolation=cv2.INTER_AREA) / 255.0
-LOGO_C = (620.0, PY0 + PH - FI - 26.0)
+LOGO_C = (620.0, PY0 + PH - FI - 50.0)
 lx0, ly0 = int(LOGO_C[0] * AS - lw / 2), int(LOGO_C[1] * AS - lh / 2)
 reg = img[ly0:ly0 + lh, lx0:lx0 + lw]
 img[ly0:ly0 + lh, lx0:lx0 + lw] = reg * (1 - la[..., None]) + np.array([12.0, 10.0, 11.0]) * la[..., None]

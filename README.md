@@ -44,7 +44,8 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
 - Vérification (riff de guitare synthétique, écart normalisé ESR après alignement) : DISTORTION 75 / TONE 5 = 0,0000 (identique),
   90 / 1 = 0,003, 65 / 3 = 0,006, 100 / 7 = 0,016, 75 / 9 = 0,05 — du même ordre que l'erreur des captures elles-mêmes.
 - À une fréquence autre que 48 kHz : rééchantillonnage sinc (Kaiser) vers 48 kHz et retour, latence déclarée au DAW.
-- Processeur : ~10 % d'un cœur avec une capture, ~20 % entre deux positions de capture (AVX2).
+- Processeur : ~10 à 15 % d'un cœur avec une capture, ~20 à 30 % entre deux positions de capture.
+- v1.2.0 : correctif du fuzz muet sous Windows (compilation AVX2 retirée : alignement mémoire des réseaux NAM non garanti par Windows) ; garde-fou : un réseau qui sortirait une valeur non finie est écarté puis réinitialisé hors du thread audio ; la barre de presets signale « fuzz captures not loaded » si les captures ne se chargent pas.
 
 ## Interface
 
@@ -54,7 +55,8 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
 - **Ligne d'état** : réglage de la commande que l'on bouge (potards en %), dans la police manuscrite des inscriptions de la pédale (Shadows Into Light).
 - Potards : seul le repère blanc peint tourne, les reflets du biseau chromé restent fixes (lumière en haut à gauche).
 - Footswitchs **noirs** (écrou hexagonal anodisé, bague moletée, bouton tourné, rendus en 3D avec la lumière du visuel) : bascule dès l'appui, **bouton enfoncé tant qu'on appuie** (il descend, s'assombrit, son ombre portée se raccourcit). LED **blanches** (bague chromée, lentille en dôme) en fondu, halo blanc et façade éclairée autour.
-- Inverseur OCTAVE (aligné sur le potard TONE) : levier nickel du kit Studio Wiga (haut = on), image intermédiaire pendant la bascule, molette possible.
+- Inverseur OCTAVE (aligné sur le potard TONE) : rendu 3D (rondelle crantée, écrou hexagonal, levier nickel à bout rond), 3 images avec la même lumière (haut = on), image intermédiaire pendant la bascule, molette possible.
+- Pédale agrandie de 8 % dans la même fenêtre (v1.2.0).
 - Jacks du kit Studio Wiga **en haut du boîtier** comme sur l'original (OUT à gauche, IN à droite), réduits.
 - **Anti-gel v2** : rendu logiciel forcé sous Windows, fenêtre opaque, timer 30 Hz qui ne redessine que ce qui change,
   caches d'images reconstruits par le timer seulement, chien de garde de redessin (1,5 s), jamais de `setSize` dans

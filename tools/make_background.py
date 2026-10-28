@@ -135,7 +135,7 @@ def rect_mask(r, pad=4.0, rad=10.0):
 red_fill(rect_mask((420.0, 700.0, 400.0, 86.0), pad=0.0), soft=5.0, sigma=50.0)
 # LED du visuel (allumees, avec halo) : remplacees par les LED rendues
 for c in (LED_L, LED_R):
-    red_fill((disc(c, 50.0) & (redish2 > 0) | disc(c, 16.0)).astype(np.uint8), soft=5.0, sigma=40.0)
+    red_fill((disc(c, 64.0) & (face_in > 0) | disc(c, 20.0)).astype(np.uint8), soft=6.0, sigma=40.0)   # halo compris
 # footswitchs du visuel et leurs ombres bizarres : effaces (le plugin dessine les footswitchs noirs, enfoncables)
 for c in (FS_L, FS_R):
     core = disc(c, 54.0)
@@ -143,12 +143,33 @@ for c in (FS_L, FS_R):
     red_fill((core | halo).astype(np.uint8), soft=4.0, sigma=40.0)
 # ancien emplacement de l'inverseur OCTAVE et de son inscription
 m = np.zeros((Hs, Ws), np.uint8)
-x0, y0 = u2p(958, 262); x1, y1 = u2p(1072, 302)
-cv2.rectangle(m, (int(x0), int(y0)), (int(x1), int(y1)), 1, -1)
-cx, cy = u2p(*OCT_OLD)
-cv2.ellipse(m, (int(cx + 4), int(cy + 8)), (58, 58), 0, 0, 360, 1, -1)
-cv2.rectangle(m, (int(cx - 20), int(cy - 76)), (int(cx + 24), int(cy)), 1, -1)
-red_fill(m, soft=3.0, sigma=24.0)
+for (x0u, y0u, x1u, y1u) in ((966, 266, 1066, 306), (982, 296, 1054, 380)):   # ancienne inscription, ancien inverseur + ombre
+    p0 = u2p(x0u, y0u); p1 = u2p(x1u, y1u)
+    cv2.rectangle(m, (int(p0[0]), int(p0[1])), (int(p1[0]), int(p1[1])), 1, -1)
+red_fill(m, soft=3.0, sigma=30.0)
+
+# traces sombres a l'exterieur du boitier, sur les cotes (restes d'anciennes pieces) : fond sombre refait
+def side_fill():
+    """bandes exterieures gauche / droite (fond sombre) refaites sur toute la hauteur : profil vertical lisse + grain"""
+    global A
+    for (x0u, x1u) in ((0, 76), (1162, 1240)):
+        x0, x1 = int(u2p(x0u, 0)[0]), int(u2p(x1u, 0)[0])
+        strip = A[:, x0:x1]
+        prof = np.median(strip, axis=1)                                  # couleur par ligne
+        yy = np.arange(Hs)
+        coef = [np.polyfit(yy, prof[:, ch], 5) for ch in range(3)]
+        smooth = np.stack([np.polyval(cf, yy) for cf in coef], 1)
+        donor = A[int(u2p(0, 700)[1]):int(u2p(0, 860)[1]), int(u2p(6, 0)[0]):int(u2p(60, 0)[0])]
+        hf = donor - cv2.GaussianBlur(donor, (0, 0), 3.0)
+        grain = np.tile(hf, (Hs // hf.shape[0] + 1, (x1 - x0) // hf.shape[1] + 1, 1))[:Hs, :x1 - x0]
+        new = smooth[:, None, :] + grain
+        # raccord doux vers le boitier (le bord du boitier reste intact)
+        w = np.ones(x1 - x0, np.float32)
+        ramp = int(u2p(4, 0)[0])
+        if x0u == 0: w[-ramp:] = np.linspace(1, 0, ramp)
+        else:        w[:ramp] = np.linspace(0, 1, ramp)
+        A[:, x0:x1] = strip * (1 - w[None, :, None]) + new * w[None, :, None]
+side_fill()
 
 # ------------------------------------------------------------------ 2. agrandissement au cadre 2x
 img = np.clip(A, 0, 255)                      # le visuel est deja au cadre 2x
@@ -254,9 +275,6 @@ LED_OFF, LED_ON = led_sprite(False), led_sprite(True)
 for (x, y) in (LED_L, LED_R):
     over(img, LED_OFF, (x - LED_S / 2) * AS, (y - LED_S / 2) * AS)
 # les footswitchs ne sont plus dans le fond : le plugin dessine fs_up.png / fs_down.png (bouton enfonce a l'appui)
-Image.fromarray(np.clip(FS_UP, 0, 255).astype(np.uint8), 'RGBA').save(os.path.join(ROOT, 'fs_up.png'))
-Image.fromarray(np.clip(FS_DOWN, 0, 255).astype(np.uint8), 'RGBA').save(os.path.join(ROOT, 'fs_down.png'))
-
 # inscription « octave » alignee sur « tone » (ecriture manuscrite noire comme les autres inscriptions du rouge)
 FONT = os.path.join(ROOT, 'assets', 'fonts', 'ShadowsIntoLight.ttf')
 lab = Image.new('L', (W * 2, H * 2), 0)
@@ -264,36 +282,74 @@ ImageDraw.Draw(lab).text((OCT_LABEL[0] * AS * 2, OCT_LABEL[1] * AS * 2), "octave
 la = cv2.resize(np.asarray(lab, np.float32) / 255.0, (W, H), interpolation=cv2.INTER_AREA)
 img = img * (1 - la[..., None]) + np.array([16.0, 12.0, 12.0]) * la[..., None]
 
-# ------------------------------------------------------------------ 4. inverseur OCTAVE (kit Studio Wiga : levier nickel, haut = ON)
-TOG_K = 0.95
-TOG_S = 124.0
-def toggle_frame(fn, ly0, ly1):
-    s = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'kit', fn)).convert('RGBA')).astype(np.float32)
-    hh, ww = s.shape[:2]
-    yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float32)
-    cx, cy = 93.0, 97.0
-    rr = np.hypot(xx - cx, yy - cy)
-    Lm = s[..., :3].mean(-1)
-    lever = (np.abs(xx - cx) < 17) & (yy > ly0) & (yy < ly1) & (Lm > 30)
-    objm = ((rr < 41) | lever) & (s[..., 3] > 128) & ~((rr > 33) & (Lm < 40)) & ~(lever & (rr > 41) & (Lm < 45))
-    nl, lab_, st, _ = cv2.connectedComponentsWithStats(objm.astype(np.uint8))
-    objm = lab_ == (1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA])))
-    objm = cv2.GaussianBlur(objm.astype(np.float32), (0, 0), 0.8)
-    n = round(TOG_S * AS); sc = TOG_K
-    M = np.float32([[sc, 0, n / 2 - cx * sc], [0, sc, n / 2 - cy * sc]])
-    rgb = cv2.warpAffine(s[..., :3], M, (n, n), flags=cv2.INTER_LANCZOS4)
-    a = np.clip(cv2.warpAffine(objm, M, (n, n), flags=cv2.INTER_LINEAR), 0, 1)
-    def shift(im, dx, dy): return cv2.warpAffine(im, np.float32([[1, 0, dx], [0, 1, dy]]), (n, n))
-    cast = cv2.GaussianBlur(shift(a, 4.0 * AS, 6.0 * AS), (0, 0), 3.5 * AS) * 0.6
-    contact = cv2.GaussianBlur(shift(a, 0.8 * AS, 1.2 * AS), (0, 0), 1.2 * AS) * 0.5
-    sh = np.clip(cast + contact, 0, 0.8) * (1 - a)
-    alpha = np.clip(a + sh, 0, 1)
-    col = np.where(alpha[..., None] > 1e-4, rgb * 1.05 * (a / np.maximum(alpha, 1e-4))[..., None], 0)
-    return np.dstack([np.clip(col, 0, 255), alpha * 255]).astype(np.uint8)
-frames = [toggle_frame('switch_levier_ON.png', 8, 97), toggle_frame('switch_levier_milieu.png', 97, 97), toggle_frame('switch_levier_OFF.png', 97, 150)]
-Image.fromarray(np.concatenate(frames, 0), 'RGBA').save(os.path.join(ROOT, 'toggle_strip.png'))
+# ------------------------------------------------------------------ 4. inverseur OCTAVE : rendu 3D propre (rondelle crantee, ecrou hexagonal,
+#     fut chrome, levier nickel a bout rond), 3 images avec la MEME lumiere : haut = ON, intermediaire, bas = OFF
+TOG_S = 110.0
+TK = 1.25                                       # echelle du rendu (unites Crycat -> unites Peachy)
+def toggle3d(pos):
+    c = Canvas(TOG_S, TOG_S, TOG_S / 2, TOG_S / 2 + 4.0)
+    x, y = c.x / TK, c.y / TK
+    r = np.hypot(x, y)
+    c.put((np.full_like(r, 1.0) + 0.25 * np.cos(np.arctan2(y, x) * 24) * (r > 10.0)) * TK, r < 11.5, 4)
+    a_ = np.arctan2(y, x)
+    hx = r * np.cos(((a_ + math.pi / 6) % (math.pi / 3)) - math.pi / 6)
+    nut = np.minimum(4.2, (8.6 - hx) * 3.0); nut = np.minimum(nut, 4.2 - np.clip(r - 7.6, 0, None) * 1.2)
+    c.put((np.clip(nut, 0, None) + 1.0) * TK, (hx < 8.6) & (nut > 0), 1)
+    bush = np.where(r < 5.6, 7.2 - 0.6 * np.clip(r - 4.6, 0, None) ** 2, 0)
+    c.put(bush * TK, r < 5.6, 5)
+    tilt = math.radians(58) * pos
+    ax = np.array([0.0, -math.sin(tilt), math.cos(tilt)])          # pos > 0 : levier vers le haut de l'image
+    Lb = 27.0 if pos != 0 else 20.0
+    p0 = np.array([0.0, 0.0, 7.0])
+    best = np.full_like(r, -1.0)
+    for t in np.linspace(0, 1, 140):
+        cen = p0 + ax * Lb * t
+        rad = 2.9 + 0.9 * t
+        if t > 0.72: rad = max(rad, 4.4 * math.sqrt(max(0.0, 1 - ((t - 0.86) / 0.14) ** 2)))
+        d2 = (x - cen[0]) ** 2 + (y - cen[1]) ** 2
+        zz = cen[2] + np.sqrt(np.clip(rad ** 2 - d2, 0, None))
+        best = np.where(d2 < rad ** 2, np.maximum(best, zz), best)
+    c.put(best * TK, best > 0, 2)
+    vis = soft_shadow(c, samples=16, spread=0.10, max_u=60)
+    visl = np.where(c.mat == 2, 1.0, vis)          # le levier ne s'ombre pas lui-meme (champ de hauteurs : il serait vu plein)
+    n = normals(c)
+    e, rb = env_chrome(n, gloss=0.9)
+    ndl, sp = spec_terms(n, visl, 120)
+    _, sp2 = spec_terms(n, visl, 30)
+    nickel = (0.80 * e * (0.55 + 0.45 * visl) + 40 * ndl + 230 * sp + 40 * sp2)[..., None] * np.array([0.98, 0.97, 0.96]) + rb[..., None] * np.array([1.0, 0.15, 0.15])
+    # lumiere d'appoint douce (studio) : le levier tourne vers le haut garde de la matiere (sinon il parait noir)
+    F = np.array([0.25, 0.55, 0.80]); F /= np.linalg.norm(F)
+    fill = np.clip(n @ F, 0, 1) ** 2 * 95.0
+    nickel = nickel + (fill * (c.mat == 2))[..., None] * np.array([0.96, 0.96, 0.97])
+    dark = (14 + 40 * ndl + 120 * sp)[..., None] * np.array([1.0, 1.0, 1.04])
+    m = c.mat[..., None]
+    col = np.where(m == 4, dark, np.where(m == 1, nickel * 0.92, nickel))
+    sh = cv2.GaussianBlur(panel_shadow(c, vis, amount=0.55), (0, 0), 0.6 * A3.PXU)
+    return finish(c, col, sh, (round(TOG_S * AS), round(TOG_S * AS)))
+frames = [toggle3d(1), toggle3d(0), toggle3d(-1)]
 
 # ------------------------------------------------------------------ 5. sauvegarde du fond, sprite LED allumee, calques d'eclairage
+# ------------------------------------------------------------------ 5. pedale agrandie dans la meme fenetre (zoom autour du centre)
+ZK, ZC = 1.08, (620.0, 459.0)
+def Z(p): return (ZC[0] + (p[0] - ZC[0]) * ZK, ZC[1] + (p[1] - ZC[1]) * ZK)
+M = np.float32([[ZK, 0, (ZC[0] * AS) * (1 - ZK)], [0, ZK, (ZC[1] * AS) * (1 - ZK)]])
+img = cv2.warpAffine(np.ascontiguousarray(img, np.float32), M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REFLECT)
+def zsprite(sp):
+    h_, w_ = sp.shape[:2]
+    return cv2.resize(np.clip(sp, 0, 255).astype(np.float32), (round(w_ * ZK), round(h_ * ZK)), interpolation=cv2.INTER_LANCZOS4)
+KNOBS = [Z(p) for p in KNOBS]; KNOB_R *= ZK; KNOB_TOP *= ZK
+PRES = Z(PRES); PRES_R *= ZK; PRES_TOP *= ZK
+OCT = Z(OCT); LED_L, LED_R = Z(LED_L), Z(LED_R); FS_L, FS_R = Z(FS_L), Z(FS_R)
+FS_W_Z, LED_S_Z, TOG_S_Z = FS_W * ZK, LED_S * ZK, TOG_S * ZK
+LED_BEZ *= ZK
+STATUS_R = (Z((420.0, 648.0)), 400.0 * ZK, 56.0 * ZK); PRESET_R = (Z((440.0, 722.0)), 360.0 * ZK, 44.0 * ZK)
+BOX = (Z((80.0, 54.0)), 1079.0 * ZK, 818.0 * ZK)
+JACKS = (Z((JACK_OUT_X, 40.0)), Z((JACK_IN_X, 40.0)))
+Image.fromarray(np.clip(zsprite(FS_UP), 0, 255).astype(np.uint8), 'RGBA').save(os.path.join(ROOT, 'fs_up.png'))
+Image.fromarray(np.clip(zsprite(FS_DOWN), 0, 255).astype(np.uint8), 'RGBA').save(os.path.join(ROOT, 'fs_down.png'))
+LED_ON = zsprite(LED_ON)
+Image.fromarray(np.concatenate([np.clip(zsprite(f), 0, 255).astype(np.uint8) for f in frames], 0), 'RGBA').save(os.path.join(ROOT, 'toggle_strip.png'))
+
 Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).save(os.path.join(ROOT, 'background.jpg'), quality=94, subsampling=0)
 Image.fromarray(np.clip(LED_ON, 0, 255).astype(np.uint8), 'RGBA').save(os.path.join(ROOT, 'led_on.png'))
 
@@ -325,9 +381,14 @@ with open(os.path.join(ROOT, 'Layout.h'), 'w') as fo:
     fo.write("    const juce::Point<float> knobPos[8] = { " + ", ".join("{ %s, %s }" % (f_(x), f_(y)) for x, y in KNOBS) + " };\n")
     fo.write(f"    const float knobR = {f_(KNOB_R)}, knobTopR = {f_(KNOB_TOP)};\n")
     fo.write(f"    const juce::Point<float> presPos {{ {f_(PRES[0])}, {f_(PRES[1])} }}; const float presR = {f_(PRES_R)}, presTopR = {f_(PRES_TOP)};\n")
-    fo.write(f"    const juce::Point<float> octPos {{ {f_(OCT[0])}, {f_(OCT[1])} }}; const float toggleS = {f_(TOG_S)};\n")
-    fo.write(f"    const juce::Point<float> ledL {{ {f_(LED_L[0])}, {f_(LED_L[1])} }}, ledR {{ {f_(LED_R[0])}, {f_(LED_R[1])} }}; const float ledS = {f_(LED_S)};\n")
+    fo.write(f"    const juce::Point<float> octPos {{ {f_(OCT[0])}, {f_(OCT[1])} }}; const float toggleS = {f_(TOG_S_Z)};\n")
+    fo.write(f"    const juce::Point<float> ledL {{ {f_(LED_L[0])}, {f_(LED_L[1])} }}, ledR {{ {f_(LED_R[0])}, {f_(LED_R[1])} }}; const float ledS = {f_(LED_S_Z)};\n")
     fo.write(f"    const juce::Rectangle<float> glowL {{ {f_(GL[0])}, {f_(GL[1])}, {f_(GL[2])}, {f_(GL[3])} }}, glowR {{ {f_(GRr[0])}, {f_(GRr[1])}, {f_(GRr[2])}, {f_(GRr[3])} }};\n")
-    fo.write(f"    const juce::Point<float> fsL {{ {f_(FS_L[0])}, {f_(FS_L[1])} }}, fsR {{ {f_(FS_R[0])}, {f_(FS_R[1])} }}; const float footR = {f_(KNURL_R + 4.0)}, fsS = {f_(FS_W)};   // zone d'appui / sprite\n")
+    fo.write(f"    const juce::Point<float> fsL {{ {f_(FS_L[0])}, {f_(FS_L[1])} }}, fsR {{ {f_(FS_R[0])}, {f_(FS_R[1])} }}; const float footR = {f_((KNURL_R + 4.0) * ZK)}, fsS = {f_(FS_W_Z)};   // zone d'appui / sprite\n")
+    (sx, sy), sw, sh_ = STATUS_R; (px, py), pw, ph = PRESET_R; (bx, by), bw, bh = BOX
+    fo.write(f"    const juce::Rectangle<float> statusRect {{ {f_(sx)}, {f_(sy)}, {f_(sw)}, {f_(sh_)} }}, presetRect {{ {f_(px)}, {f_(py)}, {f_(pw)}, {f_(ph)} }};\n")
+    fo.write(f"    const float statusFont = {f_(64.0 * ZK)}, presetFont = {f_(46.0 * ZK)}, uiScale = {f_(ZK)};\n")
+    fo.write(f"    const juce::Rectangle<float> boxRect {{ {f_(bx)}, {f_(by)}, {f_(bw)}, {f_(bh)} }};   // boitier (notice)\n")
+    fo.write(f"    const float jackOutX = {f_(JACKS[0][0])}, jackInX = {f_(JACKS[1][0])}, jackY = {f_(JACKS[0][1])};\n")
     fo.write("}\n")
 print('ok')

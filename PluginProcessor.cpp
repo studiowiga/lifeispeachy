@@ -115,6 +115,13 @@ void PeachyAudioProcessor::setParamFromAudio (int qi, float plain)
 
 void PeachyAudioProcessor::timerCallback()
 {
+    // reseau du fuzz ecarte par le garde-fou : reinitialise ici (thread de messages, traitement suspendu un instant)
+    if (engine.anyBad())
+    {
+        suspendProcessing (true);
+        engine.repairModels();
+        suspendProcessing (false);
+    }
     for (int i = 0; i < numQueued; ++i)
         if (pendingSet[i].exchange (false, std::memory_order_acquire))
             if (auto* prm = apvts.getParameter (queuedId (i)))

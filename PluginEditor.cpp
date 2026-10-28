@@ -7,8 +7,8 @@ using namespace juce;
 namespace
 {
     // repere 1240 x 928 (fond 2480 x 1856), positions generees par tools/make_art.py dans Layout.h
-    const Rectangle<float> statusRect { 420.0f, 648.0f, 400.0f, 56.0f };
-    const Rectangle<float> presetRect { 440.0f, 722.0f, 360.0f, 44.0f };
+    const Rectangle<float> statusRect = layout::statusRect;    // ligne d'etat et barre de presets (Layout.h, pedale agrandie)
+    const Rectangle<float> presetRect = layout::presetRect;
 
     const float rotStart = MathConstants<float>::pi * (7.0f / 6.0f);    // -150 degres
     const float rotEnd   = MathConstants<float>::pi * (17.0f / 6.0f);   // +150 degres
@@ -333,6 +333,7 @@ String PeachyAudioProcessorEditor::buildPresetLine() const
         s << "P" << (cp + 1) << "  " << PeachyAudioProcessor::getFactoryPreset (cp).name;
     else if (cp > 100) s << "User " << (cp - 100);
     else               s << "Edited";
+    if (! proc.modelsLoaded()) s << "  -  fuzz captures not loaded";
     return s;
 }
 
@@ -424,10 +425,10 @@ void PeachyAudioProcessorEditor::drawLed (Graphics& g, int which)
         g.setOpacity (1.0f);
     }
     // tres leger halo optique autour de la lentille
-    ColourGradient halo (Colour (0xfff4f6ff).withAlpha (0.42f * level), c.x, c.y, Colour (0xfff4f6ff).withAlpha (0.0f), c.x + 30.0f, c.y, true);
+    ColourGradient halo (Colour (0xfff4f6ff).withAlpha (0.42f * level), c.x, c.y, Colour (0xfff4f6ff).withAlpha (0.0f), c.x + 30.0f * layout::uiScale, c.y, true);
     halo.addColour (0.35, Colour (0xfff4f6ff).withAlpha (0.14f * level));
     g.setGradientFill (halo);
-    g.fillEllipse (c.x - 30.0f, c.y - 30.0f, 60.0f, 60.0f);
+    g.fillEllipse (c.x - 30.0f * layout::uiScale, c.y - 30.0f * layout::uiScale, 60.0f * layout::uiScale, 60.0f * layout::uiScale);
 }
 
 void PeachyAudioProcessorEditor::drawStatus (Graphics& g)
@@ -438,7 +439,7 @@ void PeachyAudioProcessorEditor::drawStatus (Graphics& g)
     g.fillRoundedRectangle (statusRect, 9.0f);
     g.setColour (accent.withAlpha (0.55f * a));
     g.drawRoundedRectangle (statusRect.reduced (0.75f), 9.0f, 1.6f);
-    g.setFont (Font (FontOptions (labelFace).withHeight (64.0f)));
+    g.setFont (Font (FontOptions (labelFace).withHeight (layout::statusFont)));
     g.setColour (inkWhite.withAlpha (a));
     g.drawFittedText (lastLine1, statusRect.reduced (12.0f, 0.0f).toNearestInt(), Justification::centred, 1, 0.75f);
 }
@@ -450,7 +451,7 @@ void PeachyAudioProcessorEditor::drawPresetBar (Graphics& g)
     g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
     g.setColour (accent.withAlpha (hoverZone != 0 ? 0.80f : 0.45f));
     g.drawRoundedRectangle (r.reduced (0.6f), r.getHeight() * 0.5f, 1.3f);
-    const float aw = 38.0f;
+    const float aw = 38.0f * layout::uiScale;
     auto arrow = [&] (Rectangle<float> ar, bool left, bool hot)
     {
         Path p; const auto c = ar.getCentre(); const float s = 7.0f;
@@ -461,7 +462,7 @@ void PeachyAudioProcessorEditor::drawPresetBar (Graphics& g)
     };
     arrow (r.withWidth (aw), true, hoverZone == 1);
     arrow (r.withTrimmedLeft (r.getWidth() - aw), false, hoverZone == 3);
-    g.setFont (Font (FontOptions (labelFace).withHeight (46.0f)));
+    g.setFont (Font (FontOptions (labelFace).withHeight (layout::presetFont)));
     g.setColour ((midiFlash > 0 ? Colour (0xffff9a80) : inkWhite).withAlpha (hoverZone == 2 ? 1.0f : 0.90f));
     g.drawFittedText (lastPreset, r.reduced (aw, 0.0f).toNearestInt(), Justification::centred, 1, 0.7f);
 }
@@ -487,8 +488,8 @@ void PeachyAudioProcessorEditor::paint (Graphics& g)
 static int presetZoneAt (Point<float> p)
 {
     if (! presetRect.contains (p)) return 0;
-    if (p.x < presetRect.getX() + 38.0f) return 1;
-    if (p.x > presetRect.getRight() - 38.0f) return 3;
+    if (p.x < presetRect.getX() + 38.0f * layout::uiScale) return 1;
+    if (p.x > presetRect.getRight() - 38.0f * layout::uiScale) return 3;
     return 2;
 }
 

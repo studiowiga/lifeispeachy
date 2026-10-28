@@ -106,6 +106,19 @@ namespace peachy
         return models[index] != nullptr;
     }
 
+    bool Engine::repairModels()
+    {
+        bool any = false;
+        for (int i = 0; i < numModels; ++i)
+            if (modelBad[i].load() && models[i])
+            {
+                models[i]->Reset (48000.0, max48);
+                modelBad[i].store (false);
+                any = true;
+            }
+        return any;
+    }
+
     void Engine::setEco (bool eco)
     {
         for (auto& m : models)
@@ -220,8 +233,13 @@ namespace peachy
         for (int i = 0; i < numModels; ++i)
         {
             if (wStart[i] <= 0.0f && wEnd[i] <= 0.0f) continue;
+            if (modelBad[i].load (std::memory_order_relaxed)) continue;     // en reinitialisation (thread de messages)
             float* ip = in; float* op = tmp48.data();
             models[i]->process (&ip, &op, m);
+            // garde-fou : un reseau qui sort une valeur non finie est ecarte puis reinitialise hors du thread audio
+            bool ok = true;
+            for (int j = 0; j < m; ++j) if (! std::isfinite (tmp48[(size_t) j])) { ok = false; break; }
+            if (! ok) { modelBad[i].store (true); ++badEvents; continue; }
             for (int j = 0; j < m; ++j)
             {
                 float w[numModels]; weightsFor (mix48[(size_t) j], w);

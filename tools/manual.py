@@ -16,7 +16,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHOTS = sys.argv[1]
 OUT = sys.argv[2]
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 TMP = os.path.dirname(os.path.abspath(OUT))
 FONTS = os.path.join(ROOT, "assets", "fonts")
 for n, f in (("Pop", "Poppins-Regular"), ("PopL", "Poppins-Light"), ("PopM", "Poppins-Medium"), ("PopB", "Poppins-Bold")):
@@ -32,18 +32,20 @@ LAY = open(os.path.join(ROOT, "Layout.h")).read()
 def pt(name): return [float(v) for v in re.search(name + r" \{ ([\d.]+)f, ([\d.]+)f", LAY).groups()]
 KP = [(float(a), float(b)) for a, b in re.findall(r"\{ ([\d.]+)f, ([\d.]+)f \}", LAY.split("knobPos[8] =")[1].split(";")[0])]
 PRES, OCT, LEDL, LEDR, FSL, FSR = pt("presPos"), pt("octPos"), pt("ledL"), pt("ledR"), pt("fsL"), pt("fsR")
-PX0, PY0, PW, PH, PR = 80.0, 54.0, 1079.0, 818.0, 40.0          # boitier du visuel
-JACK_OUT_X, JACK_IN_X = 81.7 + 0.21 * 1075.4, 81.7 + 0.82 * 1075.4   # jacks en haut
+PX0, PY0, PW, PH = [float(v) for v in re.search(r'boxRect \{ ([\d.]+)f, ([\d.]+)f, ([\d.]+)f, ([\d.]+)f', LAY).groups()]
+PR = 43.0
+JACK_OUT_X = float(re.search(r'jackOutX = ([\d.]+)f', LAY).group(1)); JACK_IN_X = float(re.search(r'jackInX = ([\d.]+)f', LAY).group(1))
+JACK_Y = float(re.search(r'jackY = ([\d.]+)f', LAY).group(1))
 
 src = Image.open(os.path.join(SHOTS, "peachy_status.png")).convert("RGB")
 k = src.height / 928.0
 
 # ---------- capture annotee ----------
 marks = [(1, *KP[0]), (2, *KP[1]), (3, *KP[2]), (4, *KP[3]), (5, *KP[4]), (6, *KP[5]), (7, *KP[6]), (8, *KP[7]),
-         (9, *PRES), (10, *OCT), (11, *LEDL), (12, *LEDR), (13, *FSL), (14, *FSR), (15, 620, 676), (16, 620, 744),
-         (17, JACK_IN_X, 42), (18, JACK_OUT_X, 42)]
+         (9, *PRES), (10, *OCT), (11, *LEDL), (12, *LEDR), (13, *FSL), (14, *FSR), (15, 620, 693), (16, 620, 767),
+         (17, JACK_IN_X, JACK_Y), (18, JACK_OUT_X, JACK_Y)]
 off = {1: (-70, 0), 2: (-70, 0), 3: (-70, 0), 4: (-70, 0), 5: (-70, 0), 6: (-70, 0), 7: (-70, 0), 8: (-70, 0), 9: (-45, 0),
-       10: (48, 0), 11: (0, -36), 12: (0, -36), 13: (-80, 0), 14: (80, 0), 15: (-235, 0), 16: (-215, 0), 17: (62, 0), 18: (-66, 0)}
+       10: (48, 0), 11: (0, -36), 12: (0, -36), 13: (-80, 0), 14: (80, 0), 15: (-252, 0), 16: (-232, 0), 17: (62, 0), 18: (-66, 0)}
 ann = src.copy(); dr = ImageDraw.Draw(ann)
 fnt = ImageFont.truetype(os.path.join(FONTS, "Poppins-Bold.ttf"), int(26 * k))
 for n, x, y in marks:
@@ -68,7 +70,7 @@ ob = (OCT[0] - 80, OCT[1] - 84, OCT[0] + 80, OCT[1] + 60)
 oct_img = strip([crop_u("peachy_off.png", ob), crop_u("peachy_both.png", ob)], "peachy_octave.png")
 lb = (LEDL[0] - 110, LEDL[1] - 60, LEDL[0] + 110, FSL[1] + 70)
 led_img = strip([crop_u("peachy_off.png", lb), crop_u("peachy_both.png", lb)], "peachy_leds.png")
-bar = crop_u("peachy_status.png", (400, 636, 840, 780))
+bar = crop_u("peachy_status.png", (380, 650, 860, 808))
 bar_img = os.path.join(TMP, "peachy_bar.png"); bar.save(bar_img)
 
 # ---------- couverture : pedale detouree, reflet au sol, halo rouge tres doux ----------
@@ -77,7 +79,7 @@ kk = shot.height / 928.0
 mk = Image.new("L", shot.size, 0); md = ImageDraw.Draw(mk)
 md.rounded_rectangle((PX0 * kk, PY0 * kk, (PX0 + PW) * kk, (PY0 + PH) * kk), radius=PR * kk, fill=255)
 for jx in (JACK_OUT_X, JACK_IN_X):
-    md.rectangle(((jx - 52) * kk, 38 * kk, (jx + 52) * kk, PY0 * kk + 2), fill=255)
+    md.rectangle(((jx - 58) * kk, max(0.0, JACK_Y - 16) * kk, (jx + 58) * kk, PY0 * kk + 2), fill=255)
 arr = np.asarray(shot).astype(np.float32).mean(-1)
 m = np.asarray(mk).astype(np.float32)
 body = Image.new("L", shot.size, 0); ImageDraw.Draw(body).rounded_rectangle((PX0 * kk, PY0 * kk, (PX0 + PW) * kk, (PY0 + PH) * kk), radius=PR * kk, fill=255)

@@ -356,6 +356,10 @@ namespace peachy
         bool modelsReady() const { return modelsOk; }
 
         std::atomic<float> fuzzShown { 0.0f }, preShown { 0.0f };
+        std::atomic<bool>  modelBad[numModels] {};       // reseau ecarte (sortie non finie), a reinitialiser
+        std::atomic<int>   badEvents { 0 };
+        bool anyBad() const { for (auto& b : modelBad) if (b.load()) return true; return false; }
+        bool repairModels();                             // hors thread audio (processeur suspendu)
 
     private:
         void processChunk (float* mono, int n, const Params& p) noexcept;

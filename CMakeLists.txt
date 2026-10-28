@@ -6,7 +6,7 @@ if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "" FORCE)
 endif()
 
-project(Peachy VERSION 1.1.0)
+project(Peachy VERSION 1.2.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,7 +52,7 @@ juce_add_plugin(Peachy
   FORMATS VST3
   VST3_CATEGORIES Fx Distortion
   PRODUCT_NAME "Peachy"
-  VERSION 1.1.0
+  VERSION 1.2.0
   DESCRIPTION "Preamp + fuzz (NAM captures) - double pedal format"
   IS_SYNTH FALSE
   NEEDS_MIDI_INPUT TRUE
@@ -70,7 +70,9 @@ target_include_directories(Peachy PRIVATE
   ${EIGEN_DIR})
 
 if(MSVC)
-  target_compile_options(Peachy PRIVATE /utf-8 /bigobj /arch:AVX2)
+  # pas de /arch:AVX2 : les matrices Eigen des reseaux NAM exigent alors un alignement 32 octets que l'allocateur
+  # de Windows ne garantit pas (sortie du fuzz muette) ; SSE2 par defaut, alignement 16 octets garanti
+  target_compile_options(Peachy PRIVATE /utf-8 /bigobj)
 endif()
 
 target_compile_definitions(Peachy PUBLIC

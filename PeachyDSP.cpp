@@ -239,7 +239,7 @@ namespace peachy
             const float om = sOct.next (cur.octave ? 1.0f : 0.0f);
             float x = buf[j];
             const float sub = oct.process (x);
-            x += om * 1.25f * sub;
+            x += om * 0.7f * sub;                                  // niveau de l'octave (-5 dB par rapport a la v1.2.0)
             in[j] = x * att;
             mix48[(size_t) j] = d;                                       // memorise la position (poids par echantillon)
         }

@@ -253,7 +253,7 @@ namespace peachy
         static constexpr int G = 512;
         float ring[RB] = {}; float hann[G] = {}; float dft[MAXL + 2] = {}; float ybuf[W + MAXL + 2] = {};
         int rpos = 0, dcount = 0, hop = 0, since = 0, lastGap = 0, silentHops = 0, pendHops = 0;
-        float env = 0, relEnv = 0.999f, ff = 1.0f, f0 = 0, fTuned = -1, conf = 0, confG = 0, confA = 0.999f, pend = 0;
+        float env = 0, relEnv = 0.999f, ff = 1.0f, ff2 = 1.0f, f0 = 0, fTuned = -1, conf = 0, confG = 0, confA = 0.999f, pend = 0;
         bool high = false; double fs = 48000;
         void prepare (double sr)
         {
@@ -268,7 +268,7 @@ namespace peachy
             hp.reset(); dec1.reset(); dec2.reset(); bp.reset(); lp.reset(); lp2.reset(); body.reset(); smooth.reset();
             std::fill (std::begin (ring), std::end (ring), 0.0f);
             rpos = dcount = hop = since = lastGap = silentHops = pendHops = 0;
-            env = 0; ff = 1.0f; f0 = 0; fTuned = -1; conf = confG = 0; pend = 0; high = false; tune (0);
+            env = 0; ff = 1.0f; ff2 = 1.0f; f0 = 0; fTuned = -1; conf = confG = 0; pend = 0; high = false; tune (0);
         }
         void tune (float f)
         {
@@ -349,7 +349,7 @@ namespace peachy
             const int minGap = f0 > 0 ? (int) (0.7 * fs / f0) : (int) (fs / 500);
             if (! high && d > th && since >= minGap)
             {
-                high = true; ff = -ff;
+                high = true; ff = -ff; if (ff > 0) ff2 = -ff2;            // 2e bascule en cascade : f/4 (deux octaves sous la note)
                 const float ref = f0 > 0 ? (float) (fs / f0) : (float) lastGap;
                 conf = (ref > 0 && std::abs ((float) since - ref) < 0.12f * ref) ? 1.0f : 0.0f;
                 lastGap = since; since = 0;
@@ -357,7 +357,7 @@ namespace peachy
             else if (high && d < -th) high = false;
             if (since > (int) (fs / 20)) conf = 0;
             confG = conf + confA * (confG - conf);
-            return smooth.lp ((float) body.process (x) * ff) * confG;
+            return smooth.lp ((float) body.process (x) * ff2) * confG;
         }
     };
 

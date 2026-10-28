@@ -16,7 +16,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHOTS = sys.argv[1]
 OUT = sys.argv[2]
-VERSION = "1.2.3"
+VERSION = "1.2.4"
 TMP = os.path.dirname(os.path.abspath(OUT))
 FONTS = os.path.join(ROOT, "assets", "fonts")
 for n, f in (("Pop", "Poppins-Regular"), ("PopL", "Poppins-Light"), ("PopM", "Poppins-Medium"), ("PopB", "Poppins-Bold")):
@@ -191,7 +191,7 @@ T = {
    ["1", "MASTER", "Preamp output level."], ["2", "GAIN", "Preamp gain."], ["3", "VOLUME", "Fuzz output level."],
    ["4", "DISTORTION", "Fuzz gain."], ["5", "BASS", "Preamp bass."], ["6", "MID", "Preamp mids."], ["7", "TREBLE", "Preamp treble."],
    ["8", "TONE", "Fuzz tone (dark / bright)."], ["9", "PRESENCE", "Preamp presence (small knob)."],
-   ["10", "OCTAVE", "Low octave added to the fuzz (lever up = on), next to TONE."],
+   ["10", "OCTAVE", "Sub two octaves down added to the fuzz (lever up = on), next to TONE."],
    ["11", "LED left", "Preamp on."], ["12", "LED right", "Fuzz on."],
    ["13", "Left footswitch", "Preamp on / off."], ["14", "Right footswitch", "Fuzz on / off."],
    ["15", "Status line", "Setting of the control you just moved."], ["16", "Preset bar", "Arrows = previous / next, name = preset menu."],
@@ -203,7 +203,7 @@ T = {
       ("MASTER (preamp) · VOLUME (fuzz)", "Output level of each section. Noon = reference level (for the fuzz: the level of the captures), full = about +10 dB, 0 = muted. The two sections can be levelled independently so that switching between them does not jump."),
       ("DISTORTION (fuzz)", "From 50 % to 100 % the sound comes straight from the captures of the real pedal, with a smooth fade between the two nearest captured positions (50, 65, 75, 90, 100 %). Below 50 % the 50 % capture is driven by a lower input level: less saturation, more of the pick attack, as when turning the real knob down."),
       ("TONE (fuzz)", "Exact model of the pedal's TONE filter, measured on the nine captured positions (rms error 0.4 dB): counter-clockwise rolls off the highs (dark, woolly), clockwise cuts the lows and lifts the highs (thin, bright, cutting). Knob position 0 to 10 covers the captured range 1 to 9; noon = 5."),
-      ("OCTAVE (fuzz)", "Adds a low octave in front of the fuzz, made the analog way: a flip-flop divides the frequency of your note by two and multiplies your signal, so the octave follows your dynamics. A pitch tracker tunes the detection to the fundamental of your note, so the octave holds the note even on 7 and 8-string guitars tuned very low (down to about 25 Hz), until the note dies away, and locks onto the root of power chords; it fades in as soon as it has locked. It works when the FUZZ footswitch is on. Fuller chords (three notes or more beyond the fifth and octave) can still make it waver, like any octave pedal.")],
+      ("OCTAVE (fuzz)", "Adds a sub two octaves below your note in front of the fuzz, made the analog way: two flip-flops in a row divide the frequency of your note by four and multiply your signal, so the octave follows your dynamics. A pitch tracker tunes the detection to the fundamental of your note, so the octave holds the note even on 7 and 8-string guitars tuned very low (down to about 25 Hz), until the note dies away, and locks onto the root of power chords; it fades in as soon as it has locked. It works when the FUZZ footswitch is on. Fuller chords (three notes or more beyond the fifth and octave) can still make it waver, like any octave pedal.")],
  oct_cap="OCTAVE switch off (lever down) and on (lever up).",
  fs_t="5. Footswitches, LEDs and MIDI",
  fs=["<b>Footswitches</b>: black footswitches. Left = PREAMP, right = FUZZ, each independent. They switch as soon as you press them; while you hold the mouse button the cap stays pushed down (it sinks, gets darker and its shadow shortens). Hold for more than 0.45 s after turning a section on and it works as a momentary switch (it turns off when you release it); right-click &gt; <b>Settings</b> to disable.",
@@ -256,7 +256,7 @@ T = {
    ["1", "MASTER", "Volume de sortie du préampli."], ["2", "GAIN", "Gain du préampli."], ["3", "VOLUME", "Volume de sortie du fuzz."],
    ["4", "DISTORTION", "Gain du fuzz."], ["5", "BASS", "Graves du préampli."], ["6", "MID", "Médiums du préampli."], ["7", "TREBLE", "Aigus du préampli."],
    ["8", "TONE", "Tonalité du fuzz (sombre / brillant)."], ["9", "PRESENCE", "Présence du préampli (petit potard)."],
-   ["10", "OCTAVE", "Octave grave ajoutée au fuzz (levier en haut = on), à côté de TONE."],
+   ["10", "OCTAVE", "Double octave grave ajoutée au fuzz (levier haut = on), à côté de TONE."],
    ["11", "LED gauche", "Préampli enclenché."], ["12", "LED droite", "Fuzz enclenché."],
    ["13", "Footswitch gauche", "Préampli on / off."], ["14", "Footswitch droit", "Fuzz on / off."],
    ["15", "Ligne d'état", "Réglage de la commande que vous venez de bouger."], ["16", "Barre de presets", "Flèches = précédent / suivant, nom = menu des presets."],
@@ -268,7 +268,7 @@ T = {
       ("MASTER (préampli) · VOLUME (fuzz)", "Volume de sortie de chaque section. Midi = niveau de référence (pour le fuzz : le niveau des captures), à fond = environ +10 dB, 0 = coupé. Les deux sections se règlent séparément pour passer de l'une à l'autre sans saut de volume."),
       ("DISTORTION (fuzz)", "De 50 % à 100 %, le son vient directement des captures de la vraie pédale, avec un fondu entre les deux positions capturées les plus proches (50, 65, 75, 90, 100 %). Sous 50 %, la capture 50 % reçoit un niveau d'entrée plus faible : moins de saturation, plus d'attaque du médiator, comme en baissant le vrai potard."),
       ("TONE (fuzz)", "Modèle exact du filtre TONE de la pédale, mesuré sur les neuf positions capturées (erreur rms 0,4 dB) : vers la gauche, les aigus s'adoucissent (sombre, laineux) ; vers la droite, le grave diminue et les aigus montent (fin, brillant, tranchant). La course 0 à 10 couvre les positions capturées 1 à 9 ; midi = 5."),
-      ("OCTAVE (fuzz)", "Ajoute une octave grave devant le fuzz, à la manière analogique : une bascule divise par deux la fréquence de la note et multiplie votre signal, l'octave suit donc votre dynamique. Un suivi de hauteur accorde la détection sur la fondamentale de la note : l'octave tient la note même sur une 7 ou 8 cordes accordée très bas (jusqu'à 25 Hz environ), jusqu'à ce que la note s'éteigne, et se cale sur la fondamentale des power chords ; elle s'ouvre en fondu dès qu'elle est calée. Elle agit quand le footswitch FUZZ est allumé. Les accords plus fournis (au-delà de quinte et octave) peuvent encore la faire hésiter, comme toute pédale d'octave.")],
+      ("OCTAVE (fuzz)", "Ajoute devant le fuzz une octave deux octaves sous la note, à la manière analogique : deux bascules en cascade divisent par quatre la fréquence de la note et multiplient votre signal, l'octave suit donc votre dynamique. Un suivi de hauteur accorde la détection sur la fondamentale de la note : l'octave tient la note même sur une 7 ou 8 cordes accordée très bas (jusqu'à 25 Hz environ), jusqu'à ce que la note s'éteigne, et se cale sur la fondamentale des power chords ; elle s'ouvre en fondu dès qu'elle est calée. Elle agit quand le footswitch FUZZ est allumé. Les accords plus fournis (au-delà de quinte et octave) peuvent encore la faire hésiter, comme toute pédale d'octave.")],
  oct_cap="Inverseur OCTAVE coupé (levier en bas) et enclenché (levier en haut).",
  fs_t="5. Footswitchs, LED et MIDI",
  fs=["<b>Footswitchs</b> : footswitchs noirs. Gauche = PREAMP, droit = FUZZ, indépendants. Ils basculent dès l'appui ; tant qu'on garde le bouton de la souris enfoncé, le bouton reste enfoncé (il descend, s'assombrit et son ombre se raccourcit). Maintenu plus de 0,45 s après avoir enclenché une section, il fonctionne en momentané (la section se coupe au relâchement) ; clic droit &gt; <b>Settings</b> pour désactiver.",

@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 //==============================================================================
 // PEACHY (Studio Wiga) - moteur audio
 //
@@ -354,6 +355,7 @@ namespace peachy
         void process (float* const* io, int numChannels, int numSamples, const Params& p) noexcept;
         int  latency() const { return latencySamples; }
         bool modelsReady() const { return modelsOk; }
+        const std::string& loadError() const { return lastError; }
 
         std::atomic<float> fuzzShown { 0.0f }, preShown { 0.0f };
         std::atomic<bool>  modelBad[numModels] {};       // reseau ecarte (sortie non finie), a reinitialiser
@@ -368,6 +370,7 @@ namespace peachy
 
         std::unique_ptr<nam::DSP> models[numModels];
         bool modelsOk = false;
+        std::string lastError;
         double fs = 48000; bool resample = false;
         SincResampler up, down;
         int maxChunk = 256, max48 = 512, latencySamples = 0, fuzzLat = 0, preLat = 32;

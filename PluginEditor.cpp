@@ -333,7 +333,7 @@ String PeachyAudioProcessorEditor::buildPresetLine() const
         s << "P" << (cp + 1) << "  " << PeachyAudioProcessor::getFactoryPreset (cp).name;
     else if (cp > 100) s << "User " << (cp - 100);
     else               s << "Edited";
-    if (! proc.modelsLoaded()) s << "  -  fuzz captures not loaded";
+    if (! proc.modelsLoaded()) s << "  -  fuzz captures not loaded (" << proc.modelsError().substring (0, 60) << ")";
     return s;
 }
 

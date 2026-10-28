@@ -80,6 +80,7 @@ public:
     std::atomic<int>   lastMidiCC { -1 }, lastMidiValue { 0 }, lastMidiProgram { -1 }, midiCounter { 0 };
     std::atomic<float> outLevel { 0.0f };
     bool modelsLoaded() const { return engine.modelsReady(); }
+    juce::String modelsError() const { return juce::String (engine.loadError()); }
 
     // 8 potards (ordre du Layout), puis PRESENCE
     static constexpr int numKnobs = 9;

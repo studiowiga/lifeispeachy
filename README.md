@@ -45,7 +45,7 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
   90 / 1 = 0,003, 65 / 3 = 0,006, 100 / 7 = 0,016, 75 / 9 = 0,05 — du même ordre que l'erreur des captures elles-mêmes.
 - À une fréquence autre que 48 kHz : rééchantillonnage sinc (Kaiser) vers 48 kHz et retour, latence déclarée au DAW.
 - Processeur : ~10 à 15 % d'un cœur avec une capture, ~20 à 30 % entre deux positions de capture.
-- v1.2.0 : correctif du fuzz muet sous Windows (compilation AVX2 retirée : alignement mémoire des réseaux NAM non garanti par Windows) ; garde-fou : un réseau qui sortirait une valeur non finie est écarté puis réinitialisé hors du thread audio ; la barre de presets signale « fuzz captures not loaded » si les captures ne se chargent pas.
+- v1.2.1 : fuzz muet sous Windows corrigé (les architectures NAM sont désormais enregistrées explicitement : l'éditeur de liens les écartait de la bibliothèque statique du plugin). v1.2.0 : correctif du fuzz muet sous Windows (compilation AVX2 retirée : alignement mémoire des réseaux NAM non garanti par Windows) ; garde-fou : un réseau qui sortirait une valeur non finie est écarté puis réinitialisé hors du thread audio ; la barre de presets signale « fuzz captures not loaded » si les captures ne se chargent pas.
 
 ## Interface
 

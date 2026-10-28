@@ -10,6 +10,31 @@ int main (int argc, char** argv)
     std::printf ("modeles NAM charges : %s\n", proc.modelsLoaded() ? "oui" : "NON");
     proc.prepareToPlay (48000.0, 256);
     std::printf ("latence a 48 kHz : %d echantillons\n", proc.getLatencySamples());
+    // test audio des presets : niveau de sortie de chaque preset avec un riff synthetique (sinus graves + attaques)
+    for (double sr : { 44100.0, 48000.0 })
+    {
+        proc.prepareToPlay (sr, 512);
+        for (int pi = 0; pi < PeachyAudioProcessor::getNumFactoryPresets(); ++pi)
+        {
+            proc.applyFactoryPreset (pi);
+            for (int i = 0; i < 5; ++i) MessageManager::getInstance()->runDispatchLoopUntil (20);
+            double sum = 0; long cnt = 0; double ph = 0;
+            for (int blk = 0; blk < 200; ++blk)
+            {
+                AudioBuffer<float> b (2, 512); MidiBuffer m;
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float env = (float) std::exp (-((blk * 512 + i) % 12000) / 4000.0);
+                    const float x = 0.25f * env * (float) std::sin (ph); ph += 2 * MathConstants<double>::pi * 82.4 / sr;
+                    b.setSample (0, i, x); b.setSample (1, i, x);
+                }
+                proc.processBlock (b, m);
+                if (blk > 40) for (int i = 0; i < 512; ++i) { sum += b.getSample (0, i) * b.getSample (0, i); ++cnt; }
+            }
+            std::printf ("sr %.0f preset %2d %-26s rms %6.1f dB\n", sr, pi + 1, PeachyAudioProcessor::getFactoryPreset (pi).name, 10 * std::log10 (sum / cnt + 1e-20));
+        }
+    }
+    proc.prepareToPlay (48000.0, 256);
     std::unique_ptr<AudioProcessorEditor> ed (proc.createEditor());
     auto* ped = static_cast<PeachyAudioProcessorEditor*> (ed.get());
     std::printf ("taille par defaut : %d x %d\n", ed->getWidth(), ed->getHeight());

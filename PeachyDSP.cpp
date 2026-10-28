@@ -4,6 +4,9 @@
 #include "NAM/get_dsp.h"
 #include "NAM/slimmable.h"
 #include "json.hpp"
+#include "NAM/model_config.h"
+#include "NAM/container.h"
+#include "NAM/wavenet/model.h"
 
 namespace peachy
 {
@@ -92,15 +95,27 @@ namespace peachy
     Engine::Engine() = default;
     Engine::~Engine() = default;
 
+    // Les architectures NAM s'enregistrent par des objets statiques ; dans la bibliotheque statique
+    // du plugin (Windows / macOS), l'editeur de liens ecarte ces fichiers si rien ne les appelle :
+    // le chargement echouait alors (fuzz muet). Enregistrement explicite, qui force aussi l'edition de liens.
+    static void ensureNamArchitectures()
+    {
+        auto& reg = nam::ConfigParserRegistry::instance();
+        if (! reg.has ("SlimmableContainer")) reg.registerParser ("SlimmableContainer", nam::container::create_config);
+        if (! reg.has ("WaveNet"))            reg.registerParser ("WaveNet", nam::wavenet::create_config);
+    }
+
     bool Engine::loadModel (int index, const char* json, size_t size)
     {
         if (index < 0 || index >= numModels) return false;
         try
         {
+            ensureNamArchitectures();
             const auto j = nlohmann::json::parse (json, json + size);
             models[index] = nam::get_dsp (j);
         }
-        catch (...) { models[index].reset(); }
+        catch (const std::exception& e) { models[index].reset(); lastError = e.what(); }
+        catch (...) { models[index].reset(); lastError = "unknown error"; }
         modelsOk = true;
         for (auto& m : models) modelsOk = modelsOk && (m != nullptr);
         return models[index] != nullptr;

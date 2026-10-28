@@ -55,7 +55,7 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
 - **Ligne d'état** : réglage de la commande que l'on bouge (potards en %), dans la police manuscrite des inscriptions de la pédale (Shadows Into Light).
 - Potards : seul le repère blanc peint tourne, les reflets du biseau chromé restent fixes (lumière en haut à gauche).
 - Footswitchs **noirs** (écrou hexagonal anodisé, bague moletée, bouton tourné, rendus en 3D avec la lumière du visuel) : bascule dès l'appui, **bouton enfoncé tant qu'on appuie** (il descend, s'assombrit, son ombre portée se raccourcit). LED **blanches** (bague chromée, lentille en dôme) en fondu, halo blanc et façade éclairée autour.
-- Inverseur OCTAVE (aligné sur le potard TONE) : rendu 3D (rondelle crantée, écrou hexagonal, levier nickel à bout rond), 3 images avec la même lumière (haut = on), image intermédiaire pendant la bascule, molette possible.
+- Inverseur OCTAVE (aligné sur le potard TONE) : exactement celui de FreakOut (photo du kit Studio Wiga : bague nickel + levier, haut = on), détouré, ombre douce sur le rouge, image intermédiaire pendant la bascule, molette possible.
 - Pédale agrandie de 8 % dans la même fenêtre (v1.2.0).
 - Jacks du kit Studio Wiga **en haut du boîtier** comme sur l'original (OUT à gauche, IN à droite), réduits.
 - **Anti-gel v2** : rendu logiciel forcé sous Windows, fenêtre opaque, timer 30 Hz qui ne redessine que ce qui change,

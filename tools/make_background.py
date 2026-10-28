@@ -134,8 +134,32 @@ def rect_mask(r, pad=4.0, rad=10.0):
 # barre de presets du visuel (le plugin la dessine) et son ombre
 red_fill(rect_mask((420.0, 700.0, 400.0, 86.0), pad=0.0), soft=5.0, sigma=50.0)
 # LED du visuel (allumees, avec halo) : remplacees par les LED rendues
+def unglow(c, r_in=135.0, r_base=(135.0, 165.0)):
+    """retire le halo de la LED du visuel sans toucher a la texture : profil radial des basses frequences (par canal,
+    hors inscriptions sombres) compare au niveau de reference de l'anneau exterieur, puis division douce"""
+    global A
+    cx, cy = u2p(*c)
+    R = int(r_base[1] / S0) + 4
+    x0, y0, x1, y1 = int(cx - R), int(cy - R), int(cx + R), int(cy + R)
+    reg = A[y0:y1, x0:x1]
+    yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
+    rr = np.hypot(xx - cx, yy - cy) * S0                         # en unites
+    ok = (redish2[y0:y1, x0:x1] > 0)
+    low = cv2.GaussianBlur(reg, (0, 0), 6)
+    base = np.array([np.median(low[..., k][ok & (rr > r_base[0]) & (rr < r_base[1])]) for k in range(3)])
+    bins = np.arange(0, r_in + 5, 4.0)
+    prof = np.zeros((len(bins), 3))
+    for i, r0 in enumerate(bins):
+        sel = ok & (rr >= r0) & (rr < r0 + 4.0)
+        prof[i] = np.median(low[sel], 0) if sel.sum() > 20 else base
+    gain = base[None, :] / np.maximum(prof, 1.0)
+    gain = cv2.GaussianBlur(gain.astype(np.float32)[:, None, :], (0, 0), sigmaX=0.1, sigmaY=1.2)[:, 0, :]
+    gi = np.stack([np.interp(rr, bins + 2.0, gain[:, k]) for k in range(3)], -1)
+    w = np.clip((r_in - rr) / 25.0, 0, 1)[..., None]               # retombe a 1 en douceur au bord
+    A[y0:y1, x0:x1] = reg * (1 + (gi - 1) * w)
 for c in (LED_L, LED_R):
-    red_fill((disc(c, 64.0) & (face_in > 0) | disc(c, 20.0)).astype(np.uint8), soft=6.0, sigma=40.0)   # halo compris
+    unglow(c)
+    red_fill(disc(c, 22.0).astype(np.uint8), soft=4.0, sigma=24.0)   # la LED elle-meme
 # footswitchs du visuel et leurs ombres bizarres : effaces (le plugin dessine les footswitchs noirs, enfoncables)
 for c in (FS_L, FS_R):
     core = disc(c, 54.0)
@@ -146,7 +170,11 @@ m = np.zeros((Hs, Ws), np.uint8)
 for (x0u, y0u, x1u, y1u) in ((966, 266, 1066, 306), (982, 296, 1054, 380)):   # ancienne inscription, ancien inverseur + ombre
     p0 = u2p(x0u, y0u); p1 = u2p(x1u, y1u)
     cv2.rectangle(m, (int(p0[0]), int(p0[1])), (int(p1[0]), int(p1[1])), 1, -1)
-red_fill(m, soft=3.0, sigma=30.0)
+m2 = np.zeros((Hs, Ws), np.uint8)                                  # ombre sombre a droite de l'ancienne inscription
+p0 = u2p(1036, 276); p1 = u2p(1132, 396)
+cv2.rectangle(m2, (int(p0[0]), int(p0[1])), (int(p1[0]), int(p1[1])), 1, -1)
+m = np.maximum(m, m2 * (face_in > 0).astype(np.uint8))
+red_fill(m, soft=5.0, sigma=30.0)
 
 # traces sombres a l'exterieur du boitier, sur les cotes (restes d'anciennes pieces) : fond sombre refait
 def side_fill():
@@ -282,53 +310,36 @@ ImageDraw.Draw(lab).text((OCT_LABEL[0] * AS * 2, OCT_LABEL[1] * AS * 2), "octave
 la = cv2.resize(np.asarray(lab, np.float32) / 255.0, (W, H), interpolation=cv2.INTER_AREA)
 img = img * (1 - la[..., None]) + np.array([16.0, 12.0, 12.0]) * la[..., None]
 
-# ------------------------------------------------------------------ 4. inverseur OCTAVE : rendu 3D propre (rondelle crantee, ecrou hexagonal,
-#     fut chrome, levier nickel a bout rond), 3 images avec la MEME lumiere : haut = ON, intermediaire, bas = OFF
+# ------------------------------------------------------------------ 4. inverseur OCTAVE : exactement celui de FreakOut (assets/kit, photo reelle :
+#     bague nickel + levier), detoure sur la bague (centre 97 / 86 px, rayon 49 px) et le levier ; l'ombre du kit (prevue pour une
+#     facade argent) est remplacee par une ombre portee douce sur le rouge, meme lumiere (haut gauche). haut = ON / milieu / bas = OFF
 TOG_S = 110.0
-TK = 1.25                                       # echelle du rendu (unites Crycat -> unites Peachy)
-def toggle3d(pos):
-    c = Canvas(TOG_S, TOG_S, TOG_S / 2, TOG_S / 2 + 4.0)
-    x, y = c.x / TK, c.y / TK
-    r = np.hypot(x, y)
-    c.put((np.full_like(r, 1.0) + 0.25 * np.cos(np.arctan2(y, x) * 24) * (r > 10.0)) * TK, r < 11.5, 4)
-    a_ = np.arctan2(y, x)
-    hx = r * np.cos(((a_ + math.pi / 6) % (math.pi / 3)) - math.pi / 6)
-    nut = np.minimum(4.2, (8.6 - hx) * 3.0); nut = np.minimum(nut, 4.2 - np.clip(r - 7.6, 0, None) * 1.2)
-    c.put((np.clip(nut, 0, None) + 1.0) * TK, (hx < 8.6) & (nut > 0), 1)
-    bush = np.where(r < 5.6, 7.2 - 0.6 * np.clip(r - 4.6, 0, None) ** 2, 0)
-    c.put(bush * TK, r < 5.6, 5)
-    tilt = math.radians(58) * pos
-    ax = np.array([0.0, -math.sin(tilt), math.cos(tilt)])          # pos > 0 : levier vers le haut de l'image
-    Lb = 27.0 if pos != 0 else 20.0
-    p0 = np.array([0.0, 0.0, 7.0])
-    best = np.full_like(r, -1.0)
-    for t in np.linspace(0, 1, 140):
-        cen = p0 + ax * Lb * t
-        rad = 2.9 + 0.9 * t
-        if t > 0.72: rad = max(rad, 4.4 * math.sqrt(max(0.0, 1 - ((t - 0.86) / 0.14) ** 2)))
-        d2 = (x - cen[0]) ** 2 + (y - cen[1]) ** 2
-        zz = cen[2] + np.sqrt(np.clip(rad ** 2 - d2, 0, None))
-        best = np.where(d2 < rad ** 2, np.maximum(best, zz), best)
-    c.put(best * TK, best > 0, 2)
-    vis = soft_shadow(c, samples=16, spread=0.10, max_u=60)
-    visl = np.where(c.mat == 2, 1.0, vis)          # le levier ne s'ombre pas lui-meme (champ de hauteurs : il serait vu plein)
-    n = normals(c)
-    e, rb = env_chrome(n, gloss=0.9)
-    ndl, sp = spec_terms(n, visl, 120)
-    _, sp2 = spec_terms(n, visl, 30)
-    nickel = (0.80 * e * (0.55 + 0.45 * visl) + 40 * ndl + 230 * sp + 40 * sp2)[..., None] * np.array([0.98, 0.97, 0.96]) + rb[..., None] * np.array([1.0, 0.15, 0.15])
-    # lumiere d'appoint douce (studio) : le levier tourne vers le haut garde de la matiere (sinon il parait noir)
-    F = np.array([0.25, 0.55, 0.80]); F /= np.linalg.norm(F)
-    fill = np.clip(n @ F, 0, 1) ** 2 * 95.0
-    nickel = nickel + (fill * (c.mat == 2))[..., None] * np.array([0.96, 0.96, 0.97])
-    dark = (14 + 40 * ndl + 120 * sp)[..., None] * np.array([1.0, 1.0, 1.04])
-    m = c.mat[..., None]
-    col = np.where(m == 4, dark, np.where(m == 1, nickel * 0.92, nickel))
-    sh = cv2.GaussianBlur(panel_shadow(c, vis, amount=0.55), (0, 0), 0.6 * A3.PXU)
-    return finish(c, col, sh, (round(TOG_S * AS), round(TOG_S * AS)))
-frames = [toggle3d(1), toggle3d(0), toggle3d(-1)]
+TOG_K = 0.80                                    # echelle (px du kit, 2 px par unite FreakOut -> unites Peachy)
+def toggle_kit(fn, ly0, ly1):
+    s_ = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'kit', fn)).convert('RGBA')).astype(np.float32)
+    hh, ww = s_.shape[:2]
+    yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float32)
+    cx, cy = 97.0, 86.0
+    rr = np.hypot(xx - cx, yy - cy)
+    lever = (np.abs(xx - cx) < 19) & (yy > ly0) & (yy < ly1)
+    objm = ((rr < 49.0) | lever) & (s_[..., 3] > 128)
+    objm = cv2.morphologyEx(objm.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    nl, lab_, st, _ = cv2.connectedComponentsWithStats(objm)
+    objm = (lab_ == 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))).astype(np.float32)
+    objm = cv2.GaussianBlur(objm, (0, 0), 0.7)
+    n = round(TOG_S * AS)
+    M = np.float32([[TOG_K, 0, n / 2 - cx * TOG_K], [0, TOG_K, n / 2 - cy * TOG_K]])
+    rgb = cv2.warpAffine(s_[..., :3], M, (n, n), flags=cv2.INTER_LANCZOS4)
+    a = np.clip(cv2.warpAffine(objm, M, (n, n), flags=cv2.INTER_LINEAR), 0, 1)
+    def shift(im, dx, dy): return cv2.warpAffine(im, np.float32([[1, 0, dx], [0, 1, dy]]), (n, n))
+    cast = cv2.GaussianBlur(shift(a, 3.5 * AS, 5.0 * AS), (0, 0), 2.6 * AS) * 0.55
+    contact = cv2.GaussianBlur(shift(a, 0.8 * AS, 1.1 * AS), (0, 0), 1.0 * AS) * 0.5
+    sh = np.clip(cast + contact, 0, 0.8) * (1 - a)
+    alpha = np.clip(a + sh, 0, 1)
+    col = np.where(alpha[..., None] > 1e-4, rgb * (a / np.maximum(alpha, 1e-4))[..., None], 0)
+    return np.dstack([np.clip(col, 0, 255), alpha * 255]).astype(np.float32)
+frames = [toggle_kit('switch_levier_ON.png', 8, 86), toggle_kit('switch_levier_milieu.png', 86, 86), toggle_kit('switch_levier_OFF.png', 86, 86)]
 
-# ------------------------------------------------------------------ 5. sauvegarde du fond, sprite LED allumee, calques d'eclairage
 # ------------------------------------------------------------------ 5. pedale agrandie dans la meme fenetre (zoom autour du centre)
 ZK, ZC = 1.08, (620.0, 459.0)
 def Z(p): return (ZC[0] + (p[0] - ZC[0]) * ZK, ZC[1] + (p[1] - ZC[1]) * ZK)

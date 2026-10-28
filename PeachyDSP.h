@@ -238,63 +238,96 @@ namespace peachy
 
     //--------------------------------------------------------------------------
     // Octave grave : bascule a f/2 (comme en analogique) multipliee par le signal. Pour tenir la note sur les
-    // accordages tres graves (7 et 8 cordes, jusqu'a ~28 Hz), ou l'harmonique 2 domine la fondamentale, la detection
-    // est accordee sur la fondamentale trouvee par un suivi de hauteur YIN (signal decime a 3 kHz, fenetre 43 ms,
-    // mise a jour toutes les 2,7 ms) : passe-bande + passe-bas centres sur f0, hysteresis, garde de 0,7 periode.
+    // accordages tres graves (7 et 8 cordes, jusqu'a ~25 Hz), ou l'harmonique 2 domine la fondamentale, la detection
+    // est accordee sur la fondamentale trouvee par un suivi de hauteur YIN (signal decime a 3 kHz, fenetre 64 ms,
+    // mise a jour toutes les 3,3 ms) : passe-bande + deux passe-bas centres sur f0, hysteresis, garde de 0,7 periode.
+    // Tenue : la note suivie est gardee tant qu'il y a du signal (jamais de retour a un filtre fixe en cours de note),
+    // une nouvelle hauteur doit etre confirmee 3 fois, minimum global si le creux YIN est flou (fin de note, corde
+    // inharmonique). Power chord (quinte) : periode commune double sans energie a f -> on remonte a la fondamentale.
     // Un indice de confiance (intervalles reguliers) ouvre l'octave en fondu : pas de grenaille sur l'attaque.
     struct OctaveDown
     {
-        static constexpr int D = 16, RB = 512, W = 128, MAXL = 128, MINL = 6, HOP = 8;
-        Biquad hp, dec1, dec2, bp, lp, body; OnePole smooth;
-        float ring[RB] = {}; float dft[MAXL + 1] = {}; float ybuf[W + MAXL] = {};
-        int rpos = 0, dcount = 0, hop = 0, since = 0, lastGap = 0, lostHops = 0;
-        float env = 0, relEnv = 0.999f, ff = 1.0f, f0 = 0, fTuned = -1, conf = 0, confG = 0, confA = 0.999f;
-        bool high = false;
-        double fs = 48000;
+        static constexpr double BPQ = 1.4;
+        static constexpr int D = 16, RB = 1024, W = 192, MAXL = 200, MINL = 6, HOP = 10;
+        Biquad hp, dec1, dec2, bp, lp, lp2, body; OnePole smooth;
+        static constexpr int G = 512;
+        float ring[RB] = {}; float hann[G] = {}; float dft[MAXL + 2] = {}; float ybuf[W + MAXL + 2] = {};
+        int rpos = 0, dcount = 0, hop = 0, since = 0, lastGap = 0, silentHops = 0, pendHops = 0;
+        float env = 0, relEnv = 0.999f, ff = 1.0f, f0 = 0, fTuned = -1, conf = 0, confG = 0, confA = 0.999f, pend = 0;
+        bool high = false; double fs = 48000;
         void prepare (double sr)
         {
-            fs = sr;
-            hp.highpass (sr, 22.0, 0.7); dec1.lowpass (sr, 700.0, 0.54); dec2.lowpass (sr, 700.0, 1.31);
+            fs = sr; hp.highpass (sr, 20.0, 0.7); dec1.lowpass (sr, 700.0, 0.54); dec2.lowpass (sr, 700.0, 1.31);
             body.lowpass (sr, 900.0, 0.7); smooth.setLP (sr, 1400.0);
-            relEnv = (float) std::exp (-1.0 / (0.150 * sr));
-            confA = (float) std::exp (-1.0 / (0.025 * sr));
+            for (int i = 0; i < G; ++i) hann[i] = (float) (0.5 - 0.5 * std::cos (2 * pi * (i + 0.5) / G));
+            relEnv = (float) std::exp (-1.0 / (0.150 * sr)); confA = (float) std::exp (-1.0 / (0.025 * sr));
             reset();
         }
         void reset()
         {
-            hp.reset(); dec1.reset(); dec2.reset(); bp.reset(); lp.reset(); body.reset(); smooth.reset();
+            hp.reset(); dec1.reset(); dec2.reset(); bp.reset(); lp.reset(); lp2.reset(); body.reset(); smooth.reset();
             std::fill (std::begin (ring), std::end (ring), 0.0f);
-            rpos = dcount = hop = since = lastGap = lostHops = 0;
-            env = 0; ff = 1.0f; f0 = 0; fTuned = -1; conf = confG = 0; high = false;
-            tune (0);
+            rpos = dcount = hop = since = lastGap = silentHops = pendHops = 0;
+            env = 0; ff = 1.0f; f0 = 0; fTuned = -1; conf = confG = 0; pend = 0; high = false; tune (0);
         }
         void tune (float f)
         {
             fTuned = f;
-            if (f <= 0) { bp.highpass (fs, 20.0, 0.6); lp.lowpass (fs, 250.0, 0.6); return; }
-            bp.bandpass (fs, f, 1.4); lp.lowpass (fs, f * 1.15, 0.6);
+            if (f <= 0) { bp.highpass (fs, 20.0, 0.6); lp.lowpass (fs, 250.0, 0.6); lp2.lowpass (fs, 300.0, 0.6); return; }
+            bp.bandpass (fs, f, BPQ); lp.lowpass (fs, f * 1.1, 0.6); lp2.lowpass (fs, f * 1.3, 0.7);
         }
-        void yin() noexcept
+        // energie d'une composante (Goertzel) sur la fenetre d'analyse
+        // fenetre de Hann de 170 ms : resout les composantes sous 30 Hz
+        float goertzel (float f) const
+        {
+            const double w = 2 * pi * f / (fs / D), c = 2 * std::cos (w); double s1 = 0, s2 = 0;
+            for (int i = 0; i < G; ++i)
+            {
+                const double s0 = hann[i] * ring[(rpos - G + i + RB * 4) % RB] + c * s1 - s2; s2 = s1; s1 = s0;
+            }
+            return (float) (s1 * s1 + s2 * s2 - c * s1 * s2);
+        }
+        float estimate()                       // 0 = rien de fiable
         {
             for (int i = 0; i < W + MAXL; ++i) ybuf[i] = ring[(rpos - (W + MAXL) + i + RB * 4) % RB];
             float e = 0; for (int i = MAXL; i < W + MAXL; ++i) e += ybuf[i] * ybuf[i];
-            if (e < 1.0e-9f * W) { if (++lostHops > 200) f0 = 0; return; }
-            float run = 0; int best = -1; dft[0] = 1;
+            if (e < 2.0e-8f * W) { ++silentHops; return 0; }
+            silentHops = 0;
+            float run = 0; dft[0] = 1;
             for (int l = 1; l <= MAXL; ++l)
             {
                 float s = 0;
                 for (int i = 0; i < W; ++i) { const float a = ybuf[MAXL + i] - ybuf[MAXL + i - l]; s += a * a; }
                 run += s; dft[l] = run > 0 ? s * (float) l / run : 1.0f;
             }
+            int best = -1;
             for (int l = MINL; l < MAXL; ++l)
                 if (dft[l] < 0.2f) { while (l + 1 < MAXL && dft[l + 1] < dft[l]) ++l; best = l; break; }
-            if (best < 0) { if (++lostHops > 200) f0 = 0; return; }
-            lostHops = 0;
+            if (best < 0)
+            {   // pas de creux net : minimum global s'il reste plausible (note qui s'eteint, corde inharmonique)
+                int g = MINL; for (int l = MINL; l < MAXL; ++l) if (dft[l] < dft[g]) g = l;
+                if (dft[g] > 0.45f) return 0;
+                best = g;
+            }
             const float a = dft[best - 1], b = dft[best], c = dft[best + 1], den = a - 2 * b + c;
             const float lag = (float) best + (std::abs (den) > 1.0e-9f ? 0.5f * (a - c) / den : 0.0f);
-            const float f = (float) (fs / D / lag);
-            if (f < 25.0f || f > 380.0f) return;
-            f0 = (f0 <= 0 || std::abs (f - f0) > 0.06f * f0) ? f : f0 + 0.3f * (f - f0);
+            float f = (float) (fs / D / lag);
+            // power chord (fondamentale + quinte) : la periode commune vaut deux periodes de la fondamentale,
+            // sans energie a f ; on remonte alors a 2 f (la note jouee)
+            for (int k = 0; k < 2; ++k)
+                if (f < 190.0f && goertzel (f) < 0.025f * goertzel (2 * f)) f *= 2; else break;
+            return (f >= 25.0f && f <= 380.0f) ? f : 0.0f;
+        }
+        void update()
+        {
+            const float f = estimate();
+            if (silentHops > 60) { f0 = 0; pend = 0; return; }      // ~0,2 s de silence : on oublie la note
+            if (f <= 0) return;                                     // incertain : on garde la note suivie
+            if (f0 <= 0) { f0 = f; pend = 0; return; }
+            if (std::abs (f - f0) <= 0.06f * f0) { f0 += 0.3f * (f - f0); pend = 0; pendHops = 0; return; }
+            // nouvelle hauteur : confirmee sur 3 analyses consecutives (8 ms) avant de changer
+            if (pend > 0 && std::abs (f - pend) <= 0.06f * pend) { if (++pendHops >= 2) { f0 = f; pend = 0; pendHops = 0; } }
+            else { pend = f; pendHops = 0; }
         }
         inline float process (float x) noexcept
         {
@@ -305,11 +338,11 @@ namespace peachy
                 dcount = 0; ring[rpos] = dd; rpos = (rpos + 1) % RB;
                 if (++hop >= HOP)
                 {
-                    hop = 0; yin();
+                    hop = 0; update();
                     if ((f0 <= 0) != (fTuned <= 0) || (f0 > 0 && std::abs (f0 - fTuned) > 0.03f * fTuned)) tune (f0);
                 }
             }
-            const float d = (float) lp.process (bp.process (h));
+            const float d = (float) lp2.process (lp.process (bp.process (h)));
             env = std::max (std::abs (d), env * relEnv);
             ++since;
             const float th = 0.3f * env + 1.0e-5f;
@@ -317,13 +350,12 @@ namespace peachy
             if (! high && d > th && since >= minGap)
             {
                 high = true; ff = -ff;
-                // confiance : intervalle egal a la periode suivie (ou au precedent) a 12 % pres
                 const float ref = f0 > 0 ? (float) (fs / f0) : (float) lastGap;
                 conf = (ref > 0 && std::abs ((float) since - ref) < 0.12f * ref) ? 1.0f : 0.0f;
                 lastGap = since; since = 0;
             }
             else if (high && d < -th) high = false;
-            if (since > (int) (fs / 20)) conf = 0;                       // plus de periode (> 50 ms) : on referme
+            if (since > (int) (fs / 20)) conf = 0;
             confG = conf + confA * (confG - conf);
             return smooth.lp ((float) body.process (x) * ff) * confG;
         }

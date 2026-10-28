@@ -25,7 +25,7 @@ habillage d'après le visuel de l'utilisateur (`design/source/peachy_visuel_v3.p
 | FUZZ (footswitch droit, LED droite) | DISTORTION | Son des **captures NAM de la vraie pédale** (50 à 100 %), fondu entre deux captures voisines ; sous 50 % : moins d'attaque à l'entrée de la capture 50 % |
 | | TONE | Filtre exact du TONE d'origine, mesuré sur les captures TONE 1 à 9 (agit après l'écrêtage) |
 | | VOLUME | Volume de sortie du fuzz (midi = niveau des captures) |
-| | OCTAVE (inverseur) | Octave grave analogique (bascule à fréquence moitié) ajoutée devant le fuzz, suit les cordes très graves |
+| | OCTAVE (inverseur) | Octave grave analogique (bascule à fréquence moitié) : ajoutée devant le fuzz et réinjectée après l'écrêtage (signal carré filtré à l'enveloppe du fuzz), suit les cordes très graves ; agit quand le FUZZ est allumé |
 
 Ordre du signal : entrée → FUZZ → PREAMP → sortie (le fuzz attaque le préampli). Les deux footswitchs sont
 indépendants ; clic = on / off, appui maintenu (> 0,45 s) quand la section était coupée = momentané

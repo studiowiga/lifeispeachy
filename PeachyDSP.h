@@ -374,10 +374,10 @@ namespace peachy
         double fs = 48000; bool resample = false;
         SincResampler up, down;
         int maxChunk = 256, max48 = 512, latencySamples = 0, fuzzLat = 0, preLat = 32;
-        std::vector<float> in48, out48, mix48, tmp48, io48, dryF, dryP, chunkBuf, gateLine;
+        std::vector<float> in48, out48, mix48, sub48, tmp48, io48, dryF, dryP, chunkBuf, gateLine;
         int dryFPos = 0, dryPPos = 0;
         // etat fuzz (domaine 48 kHz)
-        OctaveDown oct; FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
+        OctaveDown oct; Biquad subLP1, subLP2; float subEnv = 0, subRel = 0.999f; FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
         float wCur[numModels] {}; int toneCounter = 0;
         // etat general (frequence du projet)
         Preamp pre; Smooth2 sGain, sPres, sBass, sMid, sTreb, sMaster, sFuzzOn, sPreOn; int preCounter = 0;

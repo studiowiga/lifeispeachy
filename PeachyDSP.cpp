@@ -172,7 +172,7 @@ namespace peachy
         maxChunk = 256;
         max48 = (int) std::ceil (maxChunk * 48000.0 / fs) + 64;
         in48.assign ((size_t) max48, 0.0f); out48.assign ((size_t) max48, 0.0f);
-        mix48.assign ((size_t) max48, 0.0f); tmp48.assign ((size_t) max48, 0.0f); io48.assign ((size_t) max48, 0.0f);
+        mix48.assign ((size_t) max48, 0.0f); sub48.assign ((size_t) max48, 0.0f); tmp48.assign ((size_t) max48, 0.0f); io48.assign ((size_t) max48, 0.0f);
         chunkBuf.assign ((size_t) maxChunk, 0.0f); gateLine.assign ((size_t) maxChunk, 1.0f);
         for (auto& m : models) if (m) m->Reset (48000.0, max48);
 
@@ -188,7 +188,7 @@ namespace peachy
         dryF.assign ((size_t) (fuzzLat + 1), 0.0f); dryFPos = 0;
         dryP.assign ((size_t) (preLat + 1), 0.0f);  dryPPos = 0;
 
-        oct.prepare (48000.0); toneF.fs = 48000.0;
+        oct.prepare (48000.0); subLP1.lowpass (48000.0, 180.0, 0.7); subLP2.lowpass (48000.0, 260.0, 0.6); subEnv = 0; subRel = (float) std::exp (-1.0 / (0.060 * 48000.0)); toneF.fs = 48000.0;
         for (auto* s : { &sDist, &sTone, &sVol }) s->setTime (48000.0, 25.0);
         sOct.setTime (48000.0, 12.0);
         pre.prepare (fs);
@@ -241,6 +241,7 @@ namespace peachy
             const float sub = oct.process (x);
             x += om * 1.25f * sub;
             in[j] = x * att;
+            sub48[(size_t) j] = om * oct.ff;                             // bascule f/2 (signal carre)
             mix48[(size_t) j] = d;                                       // memorise la position (poids par echantillon)
         }
         weightsFor (sDist.s2 * 10.0f, wEnd);
@@ -264,7 +265,11 @@ namespace peachy
         for (int j = 0; j < m; ++j)
         {
             if ((toneCounter++ & 31) == 0) toneF.set (sTone.next (cur.tone)); else sTone.next (cur.tone);
-            const float y = toneF.bq.process (out48[(size_t) j]);
+            // octave apres l'ecretage : carre f/2 a l'enveloppe du fuzz, filtre grave (les captures attenuent les graves)
+            const float o = out48[(size_t) j];
+            subEnv = std::max (std::abs (o), subEnv * subRel);
+            const float sq = subLP2.process (subLP1.process (sub48[(size_t) j] * subEnv));
+            const float y = toneF.bq.process (o + 0.4f * sq);
             buf[j] = y * levelGain (sVol.next (cur.volume));
         }
     }
@@ -345,7 +350,7 @@ namespace peachy
     {
         if (first)
         {
-            sDist.reset (p.distortion); sTone.reset (p.tone); sVol.reset (p.volume); sOct.reset (p.octave ? 1.0f : 0.0f);
+            sDist.reset (p.distortion); sTone.reset (p.tone); sVol.reset (p.volume); sOct.reset (p.octave ? 1.0f : 0.0f); subLP1.reset(); subLP2.reset(); subEnv = 0;
             sGain.reset (p.gain); sPres.reset (p.presence); sBass.reset (p.bass); sMid.reset (p.mid); sTreb.reset (p.treble);
             sMaster.reset (p.master); sFuzzOn.reset (p.fuzzOn ? 1.0f : 0.0f); sPreOn.reset (p.preampOn ? 1.0f : 0.0f);
             toneF.set (p.tone);

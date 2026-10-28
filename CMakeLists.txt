@@ -6,7 +6,7 @@ if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "" FORCE)
 endif()
 
-project(Peachy VERSION 1.3.4)
+project(Peachy VERSION 1.3.5)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,7 +52,7 @@ juce_add_plugin(Peachy
   FORMATS VST3
   VST3_CATEGORIES Fx Distortion
   PRODUCT_NAME "Peachy"
-  VERSION 1.3.4
+  VERSION 1.3.5
   DESCRIPTION "Preamp + fuzz (NAM captures) - double pedal format"
   IS_SYNTH FALSE
   NEEDS_MIDI_INPUT TRUE

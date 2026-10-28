@@ -189,6 +189,9 @@ namespace peachy
         dryP.assign ((size_t) (preLat + 1), 0.0f);  dryPPos = 0;
 
         poly.prepare (fs); polyCold = true; octBuf.assign ((size_t) maxChunk, 0.0f);
+        octEnv = 0; octEnvRel = (float) std::exp (-1.0 / (0.080 * fs)); octBias = std::tanh (0.35f);
+        octSatNorm = 1.0f / (float) std::tanh ((double) octDrive);   // crete de sortie ~ crete d'entree
+        octSatHP.highpass (fs, 15.0, 0.7); octSatLP.lowpass (fs, 2600.0, 0.7); octSatHP.reset(); octSatLP.reset();
         pX = pY = pO = 0; lvlO = 1;
         aLvl = (float) std::exp (-1.0 / (0.300 * fs)); aLvlG = (float) std::exp (-1.0 / (0.150 * fs)); toneF.fs = 48000.0;
         for (auto* s : { &sDist, &sTone, &sVol }) s->setTime (48000.0, 25.0);
@@ -290,13 +293,24 @@ namespace peachy
             gateLine[(size_t) i] = gg;
         }
 
-        // ---- OCTAVE : generateur d'octaves polyphonique (voix du preset Baritone Growl de FOG Z), calcule sur l'entree
-        // et AJOUTE en sortie au son en place (direct, fuzz et / ou preampli), actif meme footswitchs coupes
+        // ---- OCTAVE : generateur d'octaves polyphonique (voix du preset Baritone Growl de FOG Z), calcule sur l'entree,
+        // en partie injecte dans la saturation et en partie AJOUTE propre en sortie ; actif meme footswitchs coupes
         const bool octLive = p.octave || sOct.s2 > 1.0e-4f;
         if (octLive)
         {
             if (polyCold) { poly.reset(); polyCold = false; }
-            for (int i = 0; i < n; ++i) octBuf[(size_t) i] = poly.wet (x[i]) * sOct.next (p.octave ? 1.0f : 0.0f);
+            // melange : octave propre (poids dans le grave) + la meme octave saturee en parallele (grain facon fuzz,
+            // seulement quand le fuzz ou le preampli est actif) ; les deux restent en phase, rien ne s'annule
+            const float chainOn = std::max (sFuzzOn.s2, sPreOn.s2);
+            for (int i = 0; i < n; ++i)
+            {
+                const float o = poly.wet (x[i]) * sOct.next (p.octave ? 1.0f : 0.0f);
+                octEnv = std::max (std::abs (o), octEnv * octEnvRel);
+                const float u = o / (octEnv + 1.0e-6f);                          // niveau constant dans l'ecreteur
+                const float sat = (std::tanh (octDrive * u + 0.35f) - octBias) * octEnv * octSatNorm;
+                const float satF = (float) octSatLP.process (octSatHP.process (sat));
+                octBuf[(size_t) i] = o * (1.0f - chainOn * (1.0f - octClean)) + chainOn * octSatAmt * satF;
+            }
         }
         else { sOct.reset (0.0f); polyCold = true; std::fill (octBuf.begin(), octBuf.begin() + n, 0.0f); }
 

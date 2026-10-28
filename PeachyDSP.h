@@ -472,7 +472,9 @@ namespace peachy
         // etat fuzz (domaine 48 kHz)
         PolyOctave poly; bool polyCold = true; std::vector<float> octBuf;
         // renfort d'octave : suit le gain de la chaine (preampli / fuzz), puis egalisation au niveau sans octave
-        float pX = 0, pY = 0, pO = 0, lvlO = 1, aLvl = 0.999f, aLvlG = 0.999f; static constexpr float kOct = 1.58f; /* +4 dB (v1.3.4) */ FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
+        float pX = 0, pY = 0, pO = 0, lvlO = 1, aLvl = 0.999f, aLvlG = 0.999f; static constexpr float kOct = 1.58f; /* +4 dB (v1.3.4) */ 
+        float octEnv = 0, octEnvRel = 0.999f, octBias = 0, octSatNorm = 1; Biquad octSatHP, octSatLP;
+        public: float octDrive = 4.0f, octClean = 0.6f, octSatAmt = 0.6f; private: FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
         float wCur[numModels] {}; int toneCounter = 0;
         // etat general (frequence du projet)
         Preamp pre; Smooth2 sGain, sPres, sBass, sMid, sTreb, sMaster, sFuzzOn, sPreOn; int preCounter = 0;

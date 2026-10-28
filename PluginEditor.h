@@ -53,6 +53,7 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     bool hitTest (int x, int y) override;
     std::function<void()> onRightClick, onUserChange;
+    juce::Image imgUp, imgDown;            // footswitch noir : repos / enfonce
 private:
     bool value = false, pressed = false, turnedOnByPress = false;
     double downTime = 0.0;
@@ -111,7 +112,7 @@ private:
     PeachyKnobLookAndFeel lnf;
     RightClickForwarder rightClickFwd;
 
-    juce::Image background, bgScaled, glow[2], glowS[2];
+    juce::Image background, bgScaled, glow[2], glowS[2], ledOn;
     int cacheW = 0, cacheH = 0;
     float cacheScale = 0.0f;
     int resizeSettle = 0;

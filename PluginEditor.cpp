@@ -115,16 +115,19 @@ FootSwitchArea::FootSwitchArea (RangedAudioParameter& p, std::atomic<float>* hol
 
 bool FootSwitchArea::hitTest (int x, int y)
 {
+    // zone d'appui : le bouton et sa bague (le sprite, plus grand, contient aussi l'ecrou et l'ombre)
     const auto c = getLocalBounds().toFloat().getCentre();
-    return c.getDistanceFrom ({ (float) x, (float) y }) <= (float) getWidth() * 0.5f;
+    return c.getDistanceFrom ({ (float) x, (float) y }) <= (float) getWidth() * (layout::footR / layout::fsS);
 }
 
 void FootSwitchArea::paint (Graphics& g)
 {
-    if (pressed)
+    // footswitch noir rendu en 3D : bouton enfonce tant qu'on appuie (il descend, son ombre portee raccourcit)
+    const auto& im = pressed ? imgDown : imgUp;
+    if (im.isValid())
     {
-        g.setColour (Colours::black.withAlpha (0.25f));
-        g.fillEllipse (getLocalBounds().toFloat().reduced ((float) getWidth() * 0.23f));     // rayon footR x 0,54
+        g.setImageResamplingQuality (Graphics::highResamplingQuality);
+        g.drawImage (im, getLocalBounds().toFloat());
     }
 }
 
@@ -164,6 +167,12 @@ PeachyAudioProcessorEditor::PeachyAudioProcessorEditor (PeachyAudioProcessor& p)
     background = ImageCache::getFromMemory (BinaryData::background_jpg, BinaryData::background_jpgSize);
     glow[0]    = ImageCache::getFromMemory (BinaryData::glow_l_png, BinaryData::glow_l_pngSize);
     glow[1]    = ImageCache::getFromMemory (BinaryData::glow_r_png, BinaryData::glow_r_pngSize);
+    ledOn      = ImageCache::getFromMemory (BinaryData::led_on_png, BinaryData::led_on_pngSize);
+    for (auto* f : { &preFs, &fuzzFs })
+    {
+        f->imgUp   = ImageCache::getFromMemory (BinaryData::fs_up_png,   BinaryData::fs_up_pngSize);
+        f->imgDown = ImageCache::getFromMemory (BinaryData::fs_down_png, BinaryData::fs_down_pngSize);
+    }
     octSwitch.strip = ImageCache::getFromMemory (BinaryData::toggle_strip_png, BinaryData::toggle_strip_pngSize);
     // police des inscriptions de la pedale (Shadows Into Light, ecriture a la main) pour la ligne d'etat et la barre de presets
     labelFace = Typeface::createSystemTypefaceFor (BinaryData::ShadowsIntoLight_ttf, BinaryData::ShadowsIntoLight_ttfSize);
@@ -270,7 +279,7 @@ void PeachyAudioProcessorEditor::resized()
     }
     const float ts = layout::toggleS * 0.5f;
     octSwitch.setBounds (scaled ({ layout::octPos.x - ts, layout::octPos.y - ts, ts * 2.0f, ts * 2.0f }));
-    const float fr = layout::footR;
+    const float fr = layout::fsS * 0.5f;
     preFs.setBounds  (scaled ({ layout::fsL.x - fr, layout::fsL.y - fr, fr * 2.0f, fr * 2.0f }));
     fuzzFs.setBounds (scaled ({ layout::fsR.x - fr, layout::fsR.y - fr, fr * 2.0f, fr * 2.0f }));
     resizeSettle = 4;
@@ -369,7 +378,7 @@ void PeachyAudioProcessorEditor::timerCallback()
     if (statusAlpha < 0.005f) statusAlpha = 0.0f;
     if (statusAlpha > 0.995f) statusAlpha = 1.0f;
 
-    // LED rouges : PREAMP (gauche), FUZZ (droite) ; fondu 0,45 a l'allumage / 0,28 a l'extinction
+    // LED blanches : PREAMP (gauche), FUZZ (droite) ; fondu 0,45 a l'allumage / 0,28 a l'extinction
     const bool on[2] = { proc.raw ("preampOn") > 0.5f, proc.raw ("fuzzOn") > 0.5f };
     const Rectangle<float> gr[2] = { layout::glowL, layout::glowR };
     for (int i = 0; i < 2; ++i)
@@ -405,22 +414,20 @@ void PeachyAudioProcessorEditor::drawLed (Graphics& g, int which)
     if (glowS[which].isValid()) { g.setOpacity (level); g.drawImage (glowS[which], gr); }
     g.setOpacity (1.0f);
 
+    // LED allumee : sprite rendu avec la meme lumiere que la pedale (lentille en dome, coeur chaud, reflet)
     const auto c = which == 0 ? layout::ledL : layout::ledR;
-    const float r = layout::ledLensR;
-    ColourGradient halo (redMid.withAlpha (0.22f * level), c.x, c.y, redMid.withAlpha (0.0f), c.x + r * 2.8f, c.y, true);
+    const float hs = layout::ledS * 0.5f;
+    if (ledOn.isValid())
+    {
+        g.setOpacity (level);
+        g.drawImage (ledOn, { c.x - hs, c.y - hs, hs * 2.0f, hs * 2.0f });
+        g.setOpacity (1.0f);
+    }
+    // tres leger halo optique autour de la lentille
+    ColourGradient halo (Colour (0xfff4f6ff).withAlpha (0.42f * level), c.x, c.y, Colour (0xfff4f6ff).withAlpha (0.0f), c.x + 30.0f, c.y, true);
+    halo.addColour (0.35, Colour (0xfff4f6ff).withAlpha (0.14f * level));
     g.setGradientFill (halo);
-    g.fillEllipse (c.x - r * 2.8f, c.y - r * 2.8f, r * 5.6f, r * 5.6f);
-    ColourGradient body (redCore.withAlpha (level), c.x - r * 0.10f, c.y - r * 0.12f, redDeep.withAlpha (level), c.x + r * 1.05f, c.y + r * 0.2f, true);
-    body.addColour (0.30, redCore.interpolatedWith (redMid, 0.55f).withAlpha (level));
-    body.addColour (0.62, redMid.withAlpha (level));
-    g.setGradientFill (body);
-    g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-    g.setColour (redDeep.darker (0.6f).withAlpha (0.55f * level));
-    g.drawEllipse (c.x - r + 0.5f, c.y - r + 0.5f, r * 2.0f - 1.0f, r * 2.0f - 1.0f, r * 0.12f);
-    ColourGradient sp (Colours::white.withAlpha (0.75f * level), c.x - r * 0.30f, c.y - r * 0.42f,
-                       Colours::white.withAlpha (0.0f), c.x - r * 0.30f + r * 0.32f, c.y - r * 0.42f, true);
-    g.setGradientFill (sp);
-    g.fillEllipse (c.x - r * 0.62f, c.y - r * 0.70f, r * 0.64f, r * 0.52f);
+    g.fillEllipse (c.x - 30.0f, c.y - 30.0f, 60.0f, 60.0f);
 }
 
 void PeachyAudioProcessorEditor::drawStatus (Graphics& g)

@@ -2,7 +2,7 @@
 
 Préampli saturé + fuzz au **format pédale double**, d'après une pédale « préampli + fuzz » au son des sessions
 metal du milieu des années 90 (7 cordes accordées bas). Disposition des commandes reprise de la pédale d'origine,
-habillage Studio Wiga d'après le visuel de l'utilisateur (cadre noir peint, bande noire rayée de rouge en haut, rouge en dégradé, inscriptions manuscrites). Usage personnel. Windows 11 et macOS
+habillage d'après le visuel de l'utilisateur (`design/source/peachy_visuel_v3.png` : cadre noir peint, bande noire rayée de rouge en haut, rouge en dégradé, inscriptions manuscrites), logo Studio Wiga noir en bas. Usage personnel. Windows 11 et macOS
 (binaire universel).
 
 ## Installation via GitHub
@@ -53,10 +53,9 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
 - **Barre de presets** : flèches = précédent / suivant, clic sur le nom = menu (10 presets d'usine, presets utilisateur 1 à 9).
 - **Ligne d'état** : réglage de la commande que l'on bouge (potards en %), dans la police manuscrite des inscriptions de la pédale (Shadows Into Light).
 - Potards : seul le repère blanc peint tourne, les reflets du biseau chromé restent fixes (lumière en haut à gauche).
-- Footswitchs : celui d'Echoflex (référence Studio Wiga), bouton assombri tant qu'on appuie. LED rouges en fondu,
-  la façade s'éclaire autour.
-- Inverseur OCTAVE : levier nickel du kit Studio Wiga (haut = on), image intermédiaire pendant la bascule, molette possible.
-- Jacks du kit sur les tranches (OUT à gauche, IN à droite), logo Studio Wiga noir en bas.
+- Footswitchs **noirs** (écrou hexagonal anodisé, bague moletée, bouton tourné, rendus en 3D avec la lumière du visuel) : bascule dès l'appui, **bouton enfoncé tant qu'on appuie** (il descend, s'assombrit, son ombre portée se raccourcit). LED **blanches** (bague chromée, lentille en dôme) en fondu, halo blanc et façade éclairée autour.
+- Inverseur OCTAVE (aligné sur le potard TONE) : levier nickel du kit Studio Wiga (haut = on), image intermédiaire pendant la bascule, molette possible.
+- Jacks du kit Studio Wiga **en haut du boîtier** comme sur l'original (OUT à gauche, IN à droite), réduits.
 - **Anti-gel v2** : rendu logiciel forcé sous Windows, fenêtre opaque, timer 30 Hz qui ne redessine que ce qui change,
   caches d'images reconstruits par le timer seulement, chien de garde de redessin (1,5 s), jamais de `setSize` dans
   `resized()` ; côté audio, aucun appel à l'hôte ni allocation (MIDI en file vidée sur le thread de messages,
@@ -83,7 +82,7 @@ saccades (rampe entre deux CC, course apprise automatiquement, zones mortes aux 
 ## Fichiers
 
 - `PeachyDSP.*` moteur audio · `PluginProcessor.*` / `PluginEditor.*` plugin · `Layout.h` repères (généré)
-- `tools/make_art.py` génère tout le visuel (fond, inverseur, calques des LED, `Layout.h`) · `tools/render` captures
+- `tools/make_background.py` prépare le fond à partir du visuel de l'utilisateur (repères, LED, footswitchs, inverseur effacés puis rendus en 3D : `fs_up.png` / `fs_down.png`, `led_on.png`, calques des LED, `Layout.h`) ; `tools/art3d.py` rendu 3D ; `tools/make_art.py` = visuel synthétique de la v1.0 · `tools/render` captures
   de la vraie fenêtre sous Linux · `tests/test_dsp.cpp` banc d'essai audio
 - `models/` captures NAM du fuzz (TONE 5) intégrées au plugin · `third_party/` NeuralAmpModelerCore (MIT), nlohmann/json (MIT)
 - Police : Shadows Into Light (OFL) pour les inscriptions et la ligne d'état ; Poppins pour la notice

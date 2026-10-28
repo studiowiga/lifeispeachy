@@ -188,7 +188,9 @@ namespace peachy
         dryF.assign ((size_t) (fuzzLat + 1), 0.0f); dryFPos = 0;
         dryP.assign ((size_t) (preLat + 1), 0.0f);  dryPPos = 0;
 
-        poly.prepare (fs); polyCold = true; toneF.fs = 48000.0;
+        poly.prepare (fs); polyCold = true; octBuf.assign ((size_t) maxChunk, 0.0f);
+        pX = pY = pO = 0; lvlO = 1;
+        aLvl = (float) std::exp (-1.0 / (0.300 * fs)); aLvlG = (float) std::exp (-1.0 / (0.150 * fs)); toneF.fs = 48000.0;
         for (auto* s : { &sDist, &sTone, &sVol }) s->setTime (48000.0, 25.0);
         sOct.setTime (fs, 5.0);
         pre.prepare (fs);
@@ -288,19 +290,15 @@ namespace peachy
             gateLine[(size_t) i] = gg;
         }
 
-        // ---- OCTAVE : generateur d'octaves polyphonique (son du preset Baritone Growl de FOG Z), avant le fuzz,
-        // actif meme fuzz coupe
-        if (p.octave || sOct.s2 > 1.0e-4f)
+        // ---- OCTAVE : generateur d'octaves polyphonique (voix du preset Baritone Growl de FOG Z), calcule sur l'entree
+        // et AJOUTE en sortie au son en place (direct, fuzz et / ou preampli), actif meme footswitchs coupes
+        const bool octLive = p.octave || sOct.s2 > 1.0e-4f;
+        if (octLive)
         {
             if (polyCold) { poly.reset(); polyCold = false; }
-            for (int i = 0; i < n; ++i)
-            {
-                const float o = sOct.next (p.octave ? 1.0f : 0.0f);
-                const float y = poly.process (x[i]);
-                x[i] += (y - x[i]) * o;
-            }
+            for (int i = 0; i < n; ++i) octBuf[(size_t) i] = poly.wet (x[i]) * sOct.next (p.octave ? 1.0f : 0.0f);
         }
-        else { sOct.reset (0.0f); polyCold = true; }
+        else { sOct.reset (0.0f); polyCold = true; std::fill (octBuf.begin(), octBuf.begin() + n, 0.0f); }
 
         // ---- FUZZ (domaine 48 kHz des captures)
         float* fz = chunkBuf.data();
@@ -342,6 +340,18 @@ namespace peachy
             const float pon = sPreOn.next (p.preampOn ? 1.0f : 0.0f);
             float y = dryPr + (pr - dryPr) * pon;
 
+            // renfort d'octave : environ 6 dB sous le son en place, quelle que soit la chaine, sans ecart de niveau
+            {
+                const float xi = dryFz, o = octBuf[(size_t) i];
+                pX = xi * xi + aLvl * (pX - xi * xi);
+                pY = y * y + aLvl * (pY - y * y);
+                const float chainGain = std::min (8.0f, std::sqrt ((pY + 1.0e-10f) / (pX + 1.0e-10f)));
+                const float yo = y + kOct * chainGain * o;
+                pO = yo * yo + aLvl * (pO - yo * yo);
+                const float tg = std::min (1.0f, std::max (0.5f, std::sqrt ((pY + 1.0e-10f) / (pO + 1.0e-10f))));
+                lvlO = tg + aLvlG * (lvlO - tg);
+                y = yo * lvlO;
+            }
             const float anyOn = std::max (std::max (fon, pon), sOct.s2);
             y *= 1.0f - anyOn * (1.0f - gateLine[(size_t) i]);
             // garde-fou (jamais de valeur aberrante vers l'hote)

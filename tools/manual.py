@@ -16,7 +16,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHOTS = sys.argv[1]
 OUT = sys.argv[2]
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 TMP = os.path.dirname(os.path.abspath(OUT))
 FONTS = os.path.join(ROOT, "assets", "fonts")
 for n, f in (("Pop", "Poppins-Regular"), ("PopL", "Poppins-Light"), ("PopM", "Poppins-Medium"), ("PopB", "Poppins-Bold")):
@@ -150,7 +150,7 @@ DESC = {
         "More gain, deeper scoop and more presence for low-tuned 7-string riffs and palm mutes.",
         "High gain, bass up, mids down, treble up: the classic scooped rhythm wall.",
         "Fuzz only, exactly as captured at noon tone: woolly, thick, long sustain.",
-        "Fuzz fed by the octave generator and a darker tone: huge, slow, sludgy riffs.",
+        "Fuzz reinforced by the octave generator and a darker tone: huge, slow, sludgy riffs.",
         "Full distortion and a bright tone: a cutting fuzz lead.",
         "Fuzz feeding a moderate preamp: the fuzz blends into the preamp drive.",
         "Everything on, with the octave: the densest wall the pedal can make.",
@@ -160,7 +160,7 @@ DESC = {
         "Plus de gain, médiums plus creusés et plus de présence pour les riffs et palm mutes en 7 cordes accordée bas.",
         "Beaucoup de gain, graves montés, médiums baissés, aigus montés : le mur rythmique creusé classique.",
         "Fuzz seul, exactement comme la capture tone à midi : laineux, épais, long sustain.",
-        "Fuzz nourri par le générateur d'octaves et un tone plus sombre : riffs énormes, lents, sludge.",
+        "Fuzz renforcé par le générateur d'octaves et un tone plus sombre : riffs énormes, lents, sludge.",
         "Distortion à fond et tone brillant : un solo fuzz qui tranche.",
         "Le fuzz attaque un préampli modéré : le fuzz se mélange au drive du préampli.",
         "Tout enclenché, avec l'octave : le mur le plus dense que la pédale sait faire.",
@@ -181,7 +181,7 @@ T = {
         "filter measured on the nine captured positions. Checked against the captures, the difference is of the same order as the error of the captures themselves.",
         "The <b>preamp</b> was not captured: it is modelled as a high-gain tube preamp (two clipping stages with an asymmetric triode curve, "
         "low end tightened before the clipping, passive 3-band tone stack computed exactly, presence at the output), with 4x oversampling.",
-        "Signal path: input &gt; OCTAVE &gt; FUZZ &gt; PREAMP &gt; output; the fuzz drives the preamp, as on the pedal, and the OCTAVE works on its own or in front of them."],
+        "Signal path: input &gt; FUZZ &gt; PREAMP &gt; output; the fuzz drives the preamp, as on the pedal. The OCTAVE is added on top of the result, with or without them."],
  inst_t="2. Installation",
  inst=[("Windows", "Download the <b>Peachy-VST3-Windows</b> artifact from the Actions tab of the GitHub repository Wiga0ne/Peachy, unzip it and copy the <b>Peachy.vst3</b> folder into <b>C:\\Program Files\\Common Files\\VST3</b>."),
        ("macOS", "Download <b>Peachy-VST3-macOS</b>, unzip it and copy <b>Peachy.vst3</b> into <b>~/Library/Audio/Plug-Ins/VST3</b>. If macOS blocks it, run <b>xattr -cr ~/Library/Audio/Plug-Ins/VST3/Peachy.vst3</b> in the Terminal. The binary is universal (Apple Silicon and Intel)."),
@@ -203,7 +203,7 @@ T = {
       ("MASTER (preamp) · VOLUME (fuzz)", "Output level of each section. Noon = reference level (for the fuzz: the level of the captures), full = about +10 dB, 0 = muted. The two sections can be levelled independently so that switching between them does not jump."),
       ("DISTORTION (fuzz)", "From 50 % to 100 % the sound comes straight from the captures of the real pedal, with a smooth fade between the two nearest captured positions (50, 65, 75, 90, 100 %). Below 50 % the 50 % capture is driven by a lower input level: less saturation, more of the pick attack, as when turning the real knob down."),
       ("TONE (fuzz)", "Exact model of the pedal's TONE filter, measured on the nine captured positions (rms error 0.4 dB): counter-clockwise rolls off the highs (dark, woolly), clockwise cuts the lows and lifts the highs (thin, bright, cutting). Knob position 0 to 10 covers the captured range 1 to 9; noon = 5."),
-      ("OCTAVE", "Switches on a polyphonic octave generator with the sound of the Baritone Growl preset of our FOG Z: your dry signal kept low, one octave down at full level and two octaves down underneath, through a dark resonant filter (1.3 kHz). It follows every string of a chord, mutes the moment you stop the strings and stays silent while you are not playing. It works on its own (both footswitches off) or in front of the fuzz and the preamp.")],
+      ("OCTAVE", "Adds a polyphonic octave generator with the voicing of the Baritone Growl preset of our FOG Z (one octave down, two octaves down underneath, dark resonant filter at 1.3 kHz). It is added on top of the sound already in place (clean, fuzz and / or preamp) as a reinforcement, about 8 dB under it: present enough to add weight, never dominant. Switching it on does not change the level. It follows every string of a chord, mutes the moment you stop the strings and works with both footswitches off.")],
  oct_cap="OCTAVE switch off (lever down) and on (lever up).",
  fs_t="5. Footswitches, LEDs and MIDI",
  fs=["<b>Footswitches</b>: black footswitches. Left = PREAMP, right = FUZZ, each independent. They switch as soon as you press them; while you hold the mouse button the cap stays pushed down (it sinks, gets darker and its shadow shortens). Hold for more than 0.45 s after turning a section on and it works as a momentary switch (it turns off when you release it); right-click &gt; <b>Settings</b> to disable.",
@@ -246,7 +246,7 @@ T = {
         "filtre TONE mesuré sur les neuf positions capturées. Comparé aux captures, l'écart est du même ordre que l'erreur des captures elles-mêmes.",
         "Le <b>préampli</b> n'a pas été capturé : il est modélisé comme un préampli à lampes high gain (deux étages d'écrêtage à courbe de triode asymétrique, "
         "grave serré avant l'écrêtage, tone stack passif 3 bandes calculé exactement, présence en sortie), avec un sur-échantillonnage x4.",
-        "Trajet du signal : entrée &gt; OCTAVE &gt; FUZZ &gt; PREAMP &gt; sortie ; le fuzz attaque le préampli, comme sur la pédale, et l'OCTAVE marche seule ou devant eux."],
+        "Trajet du signal : entrée &gt; FUZZ &gt; PREAMP &gt; sortie ; le fuzz attaque le préampli, comme sur la pédale. L'OCTAVE s'ajoute au résultat, avec ou sans eux."],
  inst_t="2. Installation",
  inst=[("Windows", "Téléchargez l'artefact <b>Peachy-VST3-Windows</b> dans l'onglet Actions du dépôt GitHub Wiga0ne/Peachy, décompressez-le et copiez le dossier <b>Peachy.vst3</b> dans <b>C:\\Program Files\\Common Files\\VST3</b>."),
        ("macOS", "Téléchargez <b>Peachy-VST3-macOS</b>, décompressez-le et copiez <b>Peachy.vst3</b> dans <b>~/Bibliothèque/Audio/Plug-Ins/VST3</b>. Si macOS le bloque, tapez <b>xattr -cr ~/Library/Audio/Plug-Ins/VST3/Peachy.vst3</b> dans le Terminal. Le binaire est universel (Apple Silicon et Intel)."),
@@ -268,7 +268,7 @@ T = {
       ("MASTER (préampli) · VOLUME (fuzz)", "Volume de sortie de chaque section. Midi = niveau de référence (pour le fuzz : le niveau des captures), à fond = environ +10 dB, 0 = coupé. Les deux sections se règlent séparément pour passer de l'une à l'autre sans saut de volume."),
       ("DISTORTION (fuzz)", "De 50 % à 100 %, le son vient directement des captures de la vraie pédale, avec un fondu entre les deux positions capturées les plus proches (50, 65, 75, 90, 100 %). Sous 50 %, la capture 50 % reçoit un niveau d'entrée plus faible : moins de saturation, plus d'attaque du médiator, comme en baissant le vrai potard."),
       ("TONE (fuzz)", "Modèle exact du filtre TONE de la pédale, mesuré sur les neuf positions capturées (erreur rms 0,4 dB) : vers la gauche, les aigus s'adoucissent (sombre, laineux) ; vers la droite, le grave diminue et les aigus montent (fin, brillant, tranchant). La course 0 à 10 couvre les positions capturées 1 à 9 ; midi = 5."),
-      ("OCTAVE", "Enclenche un générateur d'octaves polyphonique au son du preset Baritone Growl de notre FOG Z : le signal direct baissé, l'octave grave à plein niveau et la double octave grave en dessous, à travers un filtre résonant sombre (1,3 kHz). Il suit chaque corde d'un accord, se tait dès que vous étouffez les cordes et reste muet quand vous ne jouez pas. Il marche seul (deux footswitchs coupés) ou devant le fuzz et le préampli.")],
+      ("OCTAVE", "Ajoute un générateur d'octaves polyphonique au timbre du preset Baritone Growl de notre FOG Z (octave grave, double octave grave en dessous, filtre résonant sombre à 1,3 kHz). Il s'ajoute au son déjà en place (direct, fuzz et / ou préampli) en renfort, environ 8 dB dessous : assez présent pour apporter de la lourdeur, jamais dominant. L'enclencher ne change pas le niveau. Il suit chaque corde d'un accord, se tait dès que vous étouffez les cordes et marche deux footswitchs coupés.")],
  oct_cap="Inverseur OCTAVE coupé (levier en bas) et enclenché (levier en haut).",
  fs_t="5. Footswitchs, LED et MIDI",
  fs=["<b>Footswitchs</b> : footswitchs noirs. Gauche = PREAMP, droit = FUZZ, indépendants. Ils basculent dès l'appui ; tant qu'on garde le bouton de la souris enfoncé, le bouton reste enfoncé (il descend, s'assombrit et son ombre se raccourcit). Maintenu plus de 0,45 s après avoir enclenché une section, il fonctionne en momentané (la section se coupe au relâchement) ; clic droit &gt; <b>Settings</b> pour désactiver.",

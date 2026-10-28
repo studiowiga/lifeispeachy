@@ -254,7 +254,7 @@ namespace peachy
         SincResampler dn, upR; Biquad lpf, dcIn; double fs = 48000;
         float att = 0, rel = 0, comp = 1;
         float envF = 0, envS = 0, floorN = 1e-4f, aF = 0, aS = 0, floorUp = 0, stopG = 0, idleG = 0, aStop = 0, aIdle = 0;
-        float gDry = 0.1905f, g1 = 1.135f, g2 = 0.141f;
+        float g1 = 1.135f, g2 = 0.141f;                     // -1 et -2 dans le rapport du preset Baritone Growl
         void prepare (double sr)
         {
             fs = sr; bands.clear();
@@ -275,7 +275,7 @@ namespace peachy
             dcIn.highpass (Fi, 18.0, 0.7);
             att = (float) std::exp (-1.0 / (0.003 * Fi)); rel = (float) std::exp (-1.0 / (0.012 * Fi));
             aF = (float) std::exp (-1.0 / (0.030 * Fi)); aS = (float) std::exp (-1.0 / (0.200 * Fi));
-            floorUp = (float) std::exp (-1.0 / (3.0 * Fi));
+            floorUp = (float) std::exp (-1.0 / (20.0 * Fi));
             aStop = (float) std::exp (-1.0 / (0.002 * Fi)); aIdle = (float) std::exp (-1.0 / (0.010 * Fi));
             reset();
         }
@@ -297,8 +297,10 @@ namespace peachy
             x = (float) dcIn.process (x);
             const float ax = std::abs (x);
             envF = std::max (ax, envF * aF); envS = std::max (ax, envS * aS);
-            floorN = envS < floorN ? envS + 0.0005f * (floorN - envS) : floorN / floorUp;   // plancher de bruit appris
-            floorN = std::max (floorN, 3.0e-6f);
+            // plancher de bruit appris : descend vite dans les silences, ne remonte que tres lentement (20 s) et jamais
+            // au-dessus du bruit d'une guitare branchee (-54 dBFS) : le jeu continu ne ferme plus la porte de repos
+            floorN = envS < floorN ? envS + 0.0005f * (floorN - envS) : floorN / floorUp;
+            floorN = std::min (std::max (floorN, 3.0e-6f), 2.0e-3f);
             const bool idleOpen = envS > 4.0f * floorN;                                    // 12 dB au-dessus du bruit
             const bool stopping = envF < 0.12f * envS;                                     // la corde vient d'etre etouffee
             const float tS = stopping ? 0.0f : 1.0f; stopG = tS + aStop * (stopG - tS);
@@ -317,7 +319,7 @@ namespace peachy
                 mags[k] = std::sqrt (ir * ir + ii * ii);
             }
             float v1 = 0, v2 = 0;
-            const float bandFloor = 2.0f * floorN + 2.0e-5f;
+            const float bandFloor = 1.5f * floorN + 1.0e-5f;
             for (size_t k = 0; k < N; ++k)
             {
                 Band& b = bands[k];
@@ -340,13 +342,12 @@ namespace peachy
             const float wet = 2.0f * (g1 * v1 + g2 * v2) * stopG * idleG;   // filtre complexe : moitie de l amplitude
             return (float) lpf.process (wet) * comp;
         }
-        float process (float x)                               // cadence de l'hote
+        // cadence de l'hote : voix d'octaves seules (filtrees), a ajouter au son en place
+        float wet (float x)
         {
             dn.push (x);
             while (dn.canPull()) upR.push (tick (dn.pull()));
-            const float o = upR.canPull() ? upR.pull() : 0.0f;
-            const float y = gDry * x + o;
-            return std::tanh (y * 0.8f) / 0.8f;                // limiteur doux
+            return upR.canPull() ? upR.pull() : 0.0f;
         }
     };
 
@@ -469,7 +470,9 @@ namespace peachy
         std::vector<float> in48, out48, mix48, tmp48, io48, dryF, dryP, chunkBuf, gateLine;
         int dryFPos = 0, dryPPos = 0;
         // etat fuzz (domaine 48 kHz)
-        PolyOctave poly; bool polyCold = true; FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
+        PolyOctave poly; bool polyCold = true; std::vector<float> octBuf;
+        // renfort d'octave : suit le gain de la chaine (preampli / fuzz), puis egalisation au niveau sans octave
+        float pX = 0, pY = 0, pO = 0, lvlO = 1, aLvl = 0.999f, aLvlG = 0.999f; static constexpr float kOct = 1.0f; FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
         float wCur[numModels] {}; int toneCounter = 0;
         // etat general (frequence du projet)
         Preamp pre; Smooth2 sGain, sPres, sBass, sMid, sTreb, sMaster, sFuzzOn, sPreOn; int preCounter = 0;

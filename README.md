@@ -88,3 +88,5 @@ saccades (rampe entre deux CC, course apprise automatiquement, zones mortes aux 
   de la vraie fenêtre sous Linux · `tests/test_dsp.cpp` banc d'essai audio
 - `models/` captures NAM du fuzz (TONE 5) intégrées au plugin · `third_party/` NeuralAmpModelerCore (MIT), nlohmann/json (MIT)
 - Police : Shadows Into Light (OFL) pour les inscriptions et la ligne d'état ; Poppins pour la notice
+
+- v1.4.1 : menu de taille de fenêtre : « 60 % (default) », 75 %, 100 % (plus de taille en pixels)

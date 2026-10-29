@@ -38,6 +38,31 @@ const char* PeachyAudioProcessor::queuedId (int i)
     return ids[jlimit (0, numQueued - 1, i)];
 }
 
+const PeachyAudioProcessor::LearnDef& PeachyAudioProcessor::learnDef (int i)
+{
+    static const LearnDef defs[numLearn] =
+    {
+        { "master",     "Master",           ccFirstKnob + 0, learnContinuous, 0 },
+        { "gain",       "Gain",             ccFirstKnob + 1, learnContinuous, 0 },
+        { "volume",     "Volume (fuzz)",    ccFirstKnob + 2, learnContinuous, 0 },
+        { "distortion", "Distortion",       ccFirstKnob + 3, learnContinuous, 0 },
+        { "bass",       "Bass",             ccFirstKnob + 4, learnContinuous, 0 },
+        { "mid",        "Mid",              ccFirstKnob + 5, learnContinuous, 0 },
+        { "treble",     "Treble",           ccFirstKnob + 6, learnContinuous, 0 },
+        { "tone",       "Tone (fuzz)",      ccFirstKnob + 7, learnContinuous, 0 },
+        { "presence",   "Presence",         ccFirstKnob + 8, learnContinuous, 0 },
+        { "octave",     "Octave",           ccOctave,        learnToggle,     2 },   // >= 64 : octave
+        { "preampOn",   "Preamp footswitch", ccPreampFs,     learnFootswitch, 0 },
+        { "fuzzOn",     "Fuzz footswitch",  ccFuzzFs,        learnFootswitch, 0 },
+    };
+    return defs[jlimit (0, numLearn - 1, i)];
+}
+
+void PeachyAudioProcessor::resetMidiMap()
+{
+    for (int i = 0; i < numLearn; ++i) ccMap[i].store (learnDef (i).defaultCC);
+}
+
 //==============================================================================
 PeachyAudioProcessor::PeachyAudioProcessor()
     : AudioProcessor (BusesProperties()
@@ -47,6 +72,7 @@ PeachyAudioProcessor::PeachyAudioProcessor()
 {
     for (int i = 0; i < numRaw; ++i) rawPtr[i] = apvts.getRawParameterValue (rawIds[i]);
     for (int i = 0; i < numQueued; ++i) { pendingValue[i] = 0.0f; pendingSet[i] = false; }
+    resetMidiMap();
 
     // captures NAM du fuzz (DISTORTION 50 / 65 / 75 / 90 / 100 %, TONE 5), integrees au plugin
     const char* data[5] = { BinaryData::fuzz_G50_nam, BinaryData::fuzz_G65_nam, BinaryData::fuzz_G75_nam,
@@ -176,22 +202,48 @@ void PeachyAudioProcessor::handleMidi (MidiBuffer& midi)
                 setParamFromAudio (k, target);
                 currentPreset = -1;
             };
-            if (cc >= ccFirstKnob && cc < ccFirstKnob + numKnobs)
+
+            // MIDI Learn : le premier CC recu est affecte a la commande visee (il n'agit pas sur le son)
+            const int lt = learnTarget.load();
+            if (lt >= 0 && lt < numLearn && cc < 120)
             {
-                const int k = cc - ccFirstKnob;
-                ramps[k].msb = v;
-                knobFromCC (k, (float) v / 127.0f);
+                for (int j = 0; j < numLearn; ++j)
+                    if (j != lt && ccMap[j].load() == cc) ccMap[j].store (-1);   // numero deja pris : l'autre commande est desassignee
+                ccMap[lt].store (cc);
+                if (lt < numKnobs) ramps[lt].msb = -1;
+                prevFsCC[lt] = v;
+                lastLearned.store (lt);
+                learnTarget.store (-1);
+                lastMidiCC = cc; lastMidiValue = v; ++midiCounter;
+                continue;
             }
-            else if (cc >= ccFirstKnob + 32 && cc < ccFirstKnob + 32 + numKnobs)
+
+            int ctl = -1;
+            for (int j = 0; j < numLearn; ++j)
+                if (ccMap[j].load (std::memory_order_relaxed) == cc) { ctl = j; break; }
+            int lsbOf = -1;
+            if (ctl < 0)
+                for (int k = 0; k < numKnobs; ++k)
+                {
+                    const int msbCC = ccMap[k].load (std::memory_order_relaxed);
+                    if (msbCC >= 0 && msbCC < 32 && cc == msbCC + 32) { lsbOf = k; break; }
+                }
+
+            if (ctl >= 0 && ctl < numKnobs)
             {
-                const int k = cc - 32 - ccFirstKnob;
-                if (ramps[k].msb >= 0) knobFromCC (k, (float) (ramps[k].msb * 128 + v) / 16383.0f);
+                ramps[ctl].msb = v;
+                knobFromCC (ctl, (float) v / 127.0f);
             }
-            else if (cc == ccOctave) { setParamFromAudio (9, v >= 64 ? 1.0f : 0.0f); currentPreset = -1; }
-            else if (cc == ccPreampFs || cc == ccFuzzFs)
+            else if (lsbOf >= 0)
             {
-                const int qi = cc == ccPreampFs ? 10 : 11;
-                int& prev = cc == ccPreampFs ? prevPreCC : prevFuzzCC;
+                // CC 14 bits (CC n + CC n+32) : resolution fine si la pedale l'envoie
+                if (ramps[lsbOf].msb >= 0) knobFromCC (lsbOf, (float) (ramps[lsbOf].msb * 128 + v) / 16383.0f);
+            }
+            else if (ctl == 9) { setParamFromAudio (9, v >= 64 ? 1.0f : 0.0f); currentPreset = -1; }
+            else if (ctl == 10 || ctl == 11)
+            {
+                const int qi = ctl;
+                int& prev = prevFsCC[ctl];
                 const float curV = pendingSet[qi].load() ? pendingValue[qi].load() : rawAt (qi);
                 if (latching)                  setParamFromAudio (qi, v >= 64 ? 1.0f : 0.0f);
                 else if (v >= 64 && prev < 64) setParamFromAudio (qi, curV > 0.5f ? 0.0f : 1.0f);
@@ -332,6 +384,8 @@ void PeachyAudioProcessor::getStateInformation (MemoryBlock& dest)
 {
     auto state = apvts.copyState();
     state.setProperty ("currentPreset", currentPreset.load(), nullptr);
+    for (int i = 0; i < numLearn; ++i)
+        state.setProperty (String ("cc_") + learnDef (i).id, ccMap[i].load(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, dest);
 }
 
@@ -342,6 +396,9 @@ void PeachyAudioProcessor::setStateInformation (const void* data, int size)
         {
             auto state = ValueTree::fromXml (*xml);
             currentPreset = (int) state.getProperty ("currentPreset", 0);
+            // assignations MIDI Learn (ancien projet sans ces proprietes : numeros par defaut 20 a 31)
+            for (int i = 0; i < numLearn; ++i)
+                ccMap[i].store (jlimit (-1, 127, (int) state.getProperty (String ("cc_") + learnDef (i).id, learnDef (i).defaultCC)));
             apvts.replaceState (state);
             ++presetCounter;
         }

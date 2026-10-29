@@ -177,7 +177,14 @@ PeachyAudioProcessorEditor::PeachyAudioProcessorEditor (PeachyAudioProcessor& p)
     // police des inscriptions de la pedale (Shadows Into Light, ecriture a la main) pour la ligne d'etat et la barre de presets
     labelFace = Typeface::createSystemTypefaceFor (BinaryData::ShadowsIntoLight_ttf, BinaryData::ShadowsIntoLight_ttfSize);
 
-    rightClickFwd.callback = [this] { showContextMenu(); };
+    // index des commandes = learnDef du processeur (0-8 potards, 9 Octave, 10 Preamp, 11 Fuzz)
+    rightClickFwd.callback = [this] (Component* c)
+    {
+        int idx = -1;
+        for (int i = 0; i < PeachyAudioProcessor::numKnobs; ++i)
+            if (c == &knobs[i]) idx = i;
+        showContextMenu (idx);
+    };
 
     for (int i = 0; i < PeachyAudioProcessor::numKnobs; ++i)
     {
@@ -196,12 +203,13 @@ PeachyAudioProcessorEditor::PeachyAudioProcessorEditor (PeachyAudioProcessor& p)
         knobAtt[i] = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, PeachyAudioProcessor::knobId (i), s);
     }
 
-    octSwitch.onRightClick = [this] { showContextMenu(); };
+    octSwitch.onRightClick = [this] { showContextMenu (9); };
     octSwitch.onUserChange = [this] { proc.currentPreset = -1; };
     addAndMakeVisible (octSwitch);
+    preFs.onRightClick  = [this] { showContextMenu (10); };
+    fuzzFs.onRightClick = [this] { showContextMenu (11); };
     for (auto* f : { &preFs, &fuzzFs })
     {
-        f->onRightClick = [this] { showContextMenu(); };
         f->onUserChange = [this] { proc.currentPreset = -1; };
         addAndMakeVisible (*f);
     }
@@ -367,9 +375,24 @@ void PeachyAudioProcessorEditor::timerCallback()
     }
     const int pcount = proc.presetCounter.load();
     if (pcount != lastPresetCounter) { lastPresetCounter = pcount; numChanged = 0; }
-    if (numChanged == 1) { lastChanged = changed; showStatus(); }
+    if (numChanged == 1) { lastChanged = changed; showStatus(); learnLineUntil = 0.0; }
     for (int i = 0; i < PeachyAudioProcessor::numKnobs; ++i)
-        if (knobs[i].isMouseButtonDown()) { lastChanged = i; showStatus(); }
+        if (knobs[i].isMouseButtonDown()) { lastChanged = i; showStatus(); learnLineUntil = 0.0; }
+    // MIDI Learn : attente puis confirmation 2 s dans la ligne d'etat
+    const int lt = proc.learnTarget.load();
+    const int learned = proc.lastLearned.exchange (-1);
+    if (learned >= 0)
+    {
+        learnLine = String (PeachyAudioProcessor::learnDef (learned).name) + " = CC " + String (proc.ccMap[learned].load());
+        learnLineUntil = now + 2000.0;
+        statusUntil = jmax (statusUntil, learnLineUntil);
+    }
+    else if (lt >= 0)
+    {
+        learnLine = "MIDI LEARN: move a control for " + String (PeachyAudioProcessor::learnDef (lt).name);
+        learnLineUntil = now + 200.0;
+        statusUntil = jmax (statusUntil, now + 200.0);
+    }
     const int mc = proc.midiCounter.load();
     if (mc != lastMidiCount) { lastMidiCount = mc; midiFlash = 8; }
     if (midiFlash > 0) --midiFlash;
@@ -391,7 +414,8 @@ void PeachyAudioProcessorEditor::timerCallback()
         if (std::abs (l - drawnLed[i]) > 0.004f) { drawnLed[i] = l; askRepaint (scaled (gr[i])); }
     }
 
-    const auto l1 = buildStatusLine(), pl = buildPresetLine();
+    // (le message de learn reste pendant le fondu de sortie)
+    const auto l1 = (learnLineUntil > 0.0 && now < learnLineUntil + 800.0 ? learnLine : buildStatusLine()), pl = buildPresetLine();
     const bool textChanged = l1 != lastLine1;
     lastLine1 = l1;
     if (std::abs (statusAlpha - drawnStatus) > 0.003f || (statusAlpha > 0.0f && textChanged))
@@ -551,9 +575,33 @@ void PeachyAudioProcessorEditor::showPresetMenu()
         });
 }
 
-void PeachyAudioProcessorEditor::showContextMenu()
+void PeachyAudioProcessorEditor::addMidiMenu (PopupMenu& menu, int learnIdx)
+{
+    if (learnIdx < 0 || learnIdx >= PeachyAudioProcessor::numLearn)
+        return;
+    // clic droit sur une commande : MIDI Learn de cette commande en tete du menu
+    const int cc = proc.ccMap[learnIdx].load();
+    const int lt = proc.learnTarget.load();
+    const String name = PeachyAudioProcessor::learnDef (learnIdx).name;
+    menu.addItem (1000 + learnIdx, "MIDI Learn: " + name + " (" + (cc >= 0 ? "CC " + String (cc) : String ("none")) + ")", true, lt == learnIdx);
+    menu.addItem (1100 + learnIdx, "Clear MIDI: " + name, cc >= 0);
+    if (lt >= 0) menu.addItem (1200, "Cancel MIDI learn");
+    menu.addSeparator();
+}
+
+void PeachyAudioProcessorEditor::handleMidiMenu (int r)
+{
+    if (r >= 1000 && r < 1000 + PeachyAudioProcessor::numLearn)
+        proc.learnTarget.store (proc.learnTarget.load() == r - 1000 ? -1 : r - 1000);   // re-cliquer annule
+    else if (r >= 1100 && r < 1100 + PeachyAudioProcessor::numLearn) proc.ccMap[r - 1100].store (-1);
+    else if (r == 1200) proc.learnTarget.store (-1);
+    else if (r == 1201) { proc.learnTarget.store (-1); proc.resetMidiMap(); }
+}
+
+void PeachyAudioProcessorEditor::showContextMenu (int learnIdx)
 {
     PopupMenu menu, sizes;
+    addMidiMenu (menu, learnIdx);
     const int defaultW = roundToInt ((float) defaultH * (float) baseW / (float) baseH);
     sizes.addItem (1, "60 % (default)", true, getHeight() == defaultH);
     sizes.addItem (2, "75 %",  true, getHeight() == roundToInt (refH * 0.75f));
@@ -590,12 +638,19 @@ void PeachyAudioProcessorEditor::showContextMenu()
     menu.addSubMenu ("Settings", settings);
 
     PopupMenu midi;
-    const char* names[9] = { "Master", "Gain", "Volume (fuzz)", "Distortion", "Bass", "Mid", "Treble", "Tone (fuzz)", "Presence" };
-    for (int i = 0; i < 9; ++i) midi.addItem (900 + i, "CC " + String (20 + i) + "  " + names[i], false);
-    midi.addItem (910, "CC 29  Octave (64+ on)", false);
-    midi.addItem (911, "CC 30  Preamp footswitch", false);
-    midi.addItem (912, "CC 31  Fuzz footswitch", false);
-    midi.addItem (913, "CC 52-60  fine (14-bit) for CC 20-28", false);
+    for (int i = 0; i < PeachyAudioProcessor::numLearn; ++i)
+    {
+        const int cc = proc.ccMap[i].load();
+        midi.addItem (1000 + i, "Learn: " + String (PeachyAudioProcessor::learnDef (i).name)
+                                 + " (" + (cc >= 0 ? "CC " + String (cc) : String ("none")) + ")",
+                      true, proc.learnTarget.load() == i);
+    }
+    midi.addSeparator();
+    if (proc.learnTarget.load() >= 0) midi.addItem (1200, "Cancel MIDI learn");
+    midi.addItem (1201, "Reset MIDI to defaults (CC 20-31)");
+    midi.addSeparator();
+    midi.addItem (910, "Octave: 64+ on", false);
+    midi.addItem (913, "CC n+32 = fine (14-bit) for knobs on CC 0-31", false);
     midi.addItem (914, "Program Change 1-10  Factory presets", false);
     menu.addSubMenu ("MIDI map", midi);
     menu.addSeparator();
@@ -616,6 +671,7 @@ void PeachyAudioProcessorEditor::showContextMenu()
             else if (r >= 100 && r < 200) pr.applyFactoryPreset (r - 100);
             else if (r > 200 && r < 300)  pr.loadUserPreset (r - 200);
             else if (r > 300 && r < 400)  pr.saveUserPreset (r - 300);
+            else if (r >= 1000) { ed.handleMidiMenu (r); return; }
             ed.showStatus();
         });
 }

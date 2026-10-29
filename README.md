@@ -76,6 +76,11 @@ Interprétation des potards du haut (non documentée par le fabricant) : MASTER 
 Footswitchs MIDI à accrochage (127 / 0, par défaut) ou momentanés (bascule à chaque appui). Pédale d'expression sans
 saccades (rampe entre deux CC, course apprise automatiquement, zones mortes aux butées). Tout est automatisable.
 
+**MIDI Learn (v1.5)** : clic droit sur un potard, l'inverseur OCTAVE ou un footswitch > « MIDI Learn: <commande> », puis
+bouger la pédale / appuyer sur le footswitch MIDI ; la ligne d'état affiche « MIDI LEARN: move a control for … » puis
+« <commande> = CC n ». « Clear MIDI » retire l'assignation ; clic droit > MIDI map > « Reset MIDI to defaults » revient à
+la table ci-dessus. Les assignations sont sauvegardées avec le projet.
+
 ## Presets d'usine
 
 1. Indigo Crunch · 2. Seven String Chug · 3. Scooped Rhythm · 4. Woolly Fuzz · 5. Fuzz Octave Sludge ·
@@ -90,3 +95,4 @@ saccades (rampe entre deux CC, course apprise automatiquement, zones mortes aux 
 - Police : Shadows Into Light (OFL) pour les inscriptions et la ligne d'état ; Poppins pour la notice
 
 - v1.4.1 : menu de taille de fenêtre : « 60 % (default) », 75 %, 100 % (plus de taille en pixels)
+- v1.5.0 : MIDI Learn au clic droit sur chaque commande (Clear MIDI, assignations sauvegardées avec le projet)

@@ -63,8 +63,8 @@ private:
 
 struct RightClickForwarder : public juce::MouseListener
 {
-    std::function<void()> callback;
-    void mouseDown (const juce::MouseEvent& e) override { if (e.mods.isPopupMenu() && callback) callback(); }
+    std::function<void (juce::Component*)> callback;    // composant clique (potard) : menu MIDI Learn de cette commande
+    void mouseDown (const juce::MouseEvent& e) override { if (e.mods.isPopupMenu() && callback) callback (e.eventComponent); }
 };
 
 //==============================================================================
@@ -96,7 +96,9 @@ private:
     void useSoftwareRenderer();
     void visibilityChanged() override;
     void askRepaint (juce::Rectangle<int> r);
-    void showContextMenu();
+    void showContextMenu (int learnIdx = -1);     // learnIdx >= 0 : clic droit sur une commande (MIDI Learn en tete du menu)
+    void addMidiMenu (juce::PopupMenu& menu, int learnIdx);
+    void handleMidiMenu (int r);
     void showPresetMenu();
     void stepPreset (int delta);
     void rebuildCaches (float scale = 0.0f);
@@ -133,6 +135,10 @@ private:
     float lastValues[16];
     int lastPresetCounter = 0, lastMidiCount = 0, midiFlash = 0;
     int hoverZone = 0, drawnHover = -1;
+
+    // MIDI Learn : message dans la ligne d'etat (attente, puis « <Commande> = CC n » 2 s)
+    juce::String learnLine;
+    double learnLineUntil = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PeachyAudioProcessorEditor)
 };

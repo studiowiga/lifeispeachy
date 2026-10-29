@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "SemitonesShifter.h"
 //==============================================================================
 // PEACHY (Studio Wiga) - moteur audio
 //
@@ -238,119 +239,6 @@ namespace peachy
     };
 
     //--------------------------------------------------------------------------
-    // Moteur d'octaves polyphonique facon FOG Z (d'apres sa notice) : banc de ~190 filtres complexes (3 etages),
-    // seuls les pics du spectre parlent, phase divisee par 2 / par 4 suivie echantillon par echantillon,
-    // porte de bruit par bande, suiveur d'arret, porte de repos (12 dB au-dessus du bruit appris).
-    // Preset Baritone Growl : DRY -14,4 dB, -2 -17,0 dB, -1 +1,1 dB, +1/+2 coupes, LP 1,3 kHz Q 3,2 (niveau compense),
-    // DRY FX off (le direct reste propre), limiteur doux en sortie.
-    struct PolyOctave
-    {
-        static constexpr double Fi = 12000.0;              // cadence interne
-        struct Band { float cr, ci, g0;                   // pole complexe et gain de normalisation
-                      float s[3][2];                      // 3 etages (re, im)
-                      float mag = 0, gain = 0;
-                      float u1r = 1, u1i = 0, u2r = 1, u2i = 0; bool live = false; };
-        std::vector<Band> bands; std::vector<float> mags;
-        SincResampler dn, upR; Biquad lpf, dcIn; double fs = 48000;
-        float att = 0, rel = 0, comp = 1;
-        float envF = 0, envS = 0, floorN = 1e-4f, aF = 0, aS = 0, floorUp = 0, stopG = 0, idleG = 0, aStop = 0, aIdle = 0;
-        float g1 = 1.135f, g2 = 0.141f;                     // -1 et -2 dans le rapport du preset Baritone Growl
-        void prepare (double sr)
-        {
-            fs = sr; bands.clear();
-            dn.prepare (sr, Fi); upR.prepare (Fi, sr);
-            std::vector<double> cf;
-            for (double f = 21.0; f < 360.0; f += 7.0) cf.push_back (f);
-            for (double f = 360.0; f < 5200.0; f *= std::pow (2.0, 1.0 / 36.0)) cf.push_back (f);
-            for (size_t k = 0; k < cf.size(); ++k)
-            {
-                const double spacing = k + 1 < cf.size() ? cf[k + 1] - cf[k] : cf[k] - cf[k - 1];
-                const double b1 = (0.5 * spacing * 1.15) / 0.5098;          // demi-largeur par etage (3 etages -> -3 dB a +-espacement/2)
-                const double r = std::exp (-2 * pi * b1 / Fi), w = 2 * pi * cf[k] / Fi;
-                Band b; b.cr = (float) (r * std::cos (w)); b.ci = (float) (r * std::sin (w)); b.g0 = (float) (1 - r);
-                std::memset (b.s, 0, sizeof (b.s)); bands.push_back (b);
-            }
-            mags.assign (bands.size(), 0.0f);
-            lpf.lowpass (Fi, 1300.0, 3.2); comp = (float) (1.0 / std::sqrt (3.2 / 0.7071));
-            dcIn.highpass (Fi, 18.0, 0.7);
-            att = (float) std::exp (-1.0 / (0.003 * Fi)); rel = (float) std::exp (-1.0 / (0.012 * Fi));
-            aF = (float) std::exp (-1.0 / (0.030 * Fi)); aS = (float) std::exp (-1.0 / (0.200 * Fi));
-            floorUp = (float) std::exp (-1.0 / (20.0 * Fi));
-            aStop = (float) std::exp (-1.0 / (0.002 * Fi)); aIdle = (float) std::exp (-1.0 / (0.010 * Fi));
-            reset();
-        }
-        void reset()
-        {
-            for (auto& b : bands) { std::memset (b.s, 0, sizeof (b.s)); b.mag = b.gain = 0; b.live = false; }
-            dn.reset(); upR.reset(); lpf.reset(); dcIn.reset();
-            envF = envS = 0; floorN = 1.0e-4f; stopG = idleG = 0;
-        }
-        static inline void csqrtTrack (float xr, float xi, float& pr, float& pi_)   // racine du phaseur unitaire, continue
-        {
-            float a = std::sqrt (std::max (0.0f, 0.5f * (1 + xr))), b = std::sqrt (std::max (0.0f, 0.5f * (1 - xr)));
-            if (xi < 0) b = -b;
-            if (a * pr + b * pi_ < 0) { a = -a; b = -b; }
-            pr = a; pi_ = b;
-        }
-        float tick (float x)                                 // un echantillon a 12 kHz -> voix d'octaves filtrees
-        {
-            x = (float) dcIn.process (x);
-            const float ax = std::abs (x);
-            envF = std::max (ax, envF * aF); envS = std::max (ax, envS * aS);
-            // plancher de bruit appris : descend vite dans les silences, ne remonte que tres lentement (20 s) et jamais
-            // au-dessus du bruit d'une guitare branchee (-54 dBFS) : le jeu continu ne ferme plus la porte de repos
-            floorN = envS < floorN ? envS + 0.0005f * (floorN - envS) : floorN / floorUp;
-            floorN = std::min (std::max (floorN, 3.0e-6f), 2.0e-3f);
-            const bool idleOpen = envS > 4.0f * floorN;                                    // 12 dB au-dessus du bruit
-            const bool stopping = envF < 0.12f * envS;                                     // la corde vient d'etre etouffee
-            const float tS = stopping ? 0.0f : 1.0f; stopG = tS + aStop * (stopG - tS);
-            const float tI = idleOpen ? 1.0f : 0.0f; idleG = tI + aIdle * (idleG - tI);
-            const size_t N = bands.size();
-            for (size_t k = 0; k < N; ++k)
-            {
-                Band& b = bands[k];
-                float ir = x, ii = 0;
-                for (int st = 0; st < 3; ++st)
-                {
-                    const float sr = b.s[st][0], si = b.s[st][1];
-                    const float nr = ir + b.cr * sr - b.ci * si, ni = ii + b.cr * si + b.ci * sr;
-                    b.s[st][0] = nr; b.s[st][1] = ni; ir = nr * b.g0; ii = ni * b.g0;
-                }
-                mags[k] = std::sqrt (ir * ir + ii * ii);
-            }
-            float v1 = 0, v2 = 0;
-            const float bandFloor = 1.5f * floorN + 1.0e-5f;
-            for (size_t k = 0; k < N; ++k)
-            {
-                Band& b = bands[k];
-                const float m = mags[k];
-                const bool peak = m > bandFloor && (k == 0 || m > mags[k - 1]) && (k + 1 == N || m >= mags[k + 1]);
-                const float t = peak ? 1.0f : 0.0f;
-                b.gain = t + (t > b.gain ? att : rel) * (b.gain - t);
-                if (b.gain < 1.0e-4f) { b.live = false; continue; }
-                const float zr = b.s[2][0] * b.g0, zi = b.s[2][1] * b.g0;
-                const float inv = m > 1e-12f ? 1.0f / m : 0.0f, ur = zr * inv, ui = zi * inv;
-                if (! b.live)
-                {   // reprise : on part de la racine principale
-                    b.u1r = 1; b.u1i = 0; csqrtTrack (ur, ui, b.u1r, b.u1i);
-                    b.u2r = 1; b.u2i = 0; csqrtTrack (b.u1r, b.u1i, b.u2r, b.u2i); b.live = true;
-                }
-                else { csqrtTrack (ur, ui, b.u1r, b.u1i); csqrtTrack (b.u1r, b.u1i, b.u2r, b.u2i); }
-                const float a = m * b.gain;
-                v1 += a * b.u1r; v2 += a * b.u2r;
-            }
-            const float wet = 2.0f * (g1 * v1 + g2 * v2) * stopG * idleG;   // filtre complexe : moitie de l amplitude
-            return (float) lpf.process (wet) * comp;
-        }
-        // cadence de l'hote : voix d'octaves seules (filtrees), a ajouter au son en place
-        float wet (float x)
-        {
-            dn.push (x);
-            while (dn.canPull()) upR.push (tick (dn.pull()));
-            return upR.canPull() ? upR.pull() : 0.0f;
-        }
-    };
-
     //--------------------------------------------------------------------------
     // Tone stack passif 3 bandes (fonction de transfert analogique exacte, Yeh & Smith 2006),
     // valeurs d'une tete britannique : C1 470 pF, C2 = C3 = 22 nF, treble 220 k, bass 1 M (log), mid 25 k, R4 33 k.
@@ -470,11 +358,8 @@ namespace peachy
         std::vector<float> in48, out48, mix48, tmp48, io48, dryF, dryP, chunkBuf, gateLine;
         int dryFPos = 0, dryPPos = 0;
         // etat fuzz (domaine 48 kHz)
-        PolyOctave poly; bool polyCold = true; std::vector<float> octBuf;
-        // renfort d'octave : suit le gain de la chaine (preampli / fuzz), puis egalisation au niveau sans octave
-        float pX = 0, pY = 0, pO = 0, lvlO = 1, aLvl = 0.999f, aLvlG = 0.999f; static constexpr float kOct = 1.58f; /* +4 dB (v1.3.4) */ 
-        float octEnv = 0, octEnvRel = 0.999f, octBias = 0, octSatNorm = 1; Biquad octSatHP, octSatLP;
-        public: float octDrive = 8.0f, octSatAmt = 1.0f; private: FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
+        sw::PitchShifter octShift; bool octCold = true; std::vector<float> octWet;   // moteur de Semitones
+        FuzzTone toneF; Smooth2 sDist, sTone, sVol, sOct;
         float wCur[numModels] {}; int toneCounter = 0;
         // etat general (frequence du projet)
         Preamp pre; Smooth2 sGain, sPres, sBass, sMid, sTreb, sMaster, sFuzzOn, sPreOn; int preCounter = 0;
